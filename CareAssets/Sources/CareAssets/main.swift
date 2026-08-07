@@ -2709,6 +2709,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private var scrollWidth: CGFloat { isRTL ? contentWidth : contentWidth + horizontalInset }
     private let assetRowHeight: CGFloat = 52
     private let stockChartHeight: CGFloat = 104
+    private let positionChartExtraHeight: CGFloat = 22
     private let searchResultRowHeight: CGFloat = 52
     private let searchGroupHeaderHeight: CGFloat = 30
     private let searchGroupGap: CGFloat = 16
@@ -2841,8 +2842,20 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
     private var assetListHeight: CGFloat {
         let rows = assetListVisibleRowCount
-        let expandedHeight: CGFloat = expandedAssetID == nil ? 0 : stockChartHeight
+        let expandedHeight = expandedStockChartHeight
         return CGFloat(rows) * assetRowHeight + CGFloat(max(rows - 1, 0)) * listRowGap + expandedHeight
+    }
+
+    private var expandedStockChartHeight: CGFloat {
+        guard let expandedAssetID,
+              let asset = assets.first(where: { $0.id == expandedAssetID }) else {
+            return 0
+        }
+        return stockChartHeight(for: asset)
+    }
+
+    private func stockChartHeight(for asset: DisplayAsset) -> CGFloat {
+        stockChartHeight + (asset.hasPosition ? positionChartExtraHeight : 0)
     }
 
     private var currentListHeight: CGFloat {
@@ -3041,7 +3054,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
     private func makeAssetList() -> NSView {
         let rowCount = max(assets.count, 1)
-        let expandedHeight: CGFloat = expandedAssetID == nil ? 0 : stockChartHeight
+        let expandedHeight = expandedStockChartHeight
         let documentHeight = CGFloat(rowCount) * assetRowHeight + CGFloat(max(rowCount - 1, 0)) * listRowGap + expandedHeight
         let visibleRows = max(1, min(assets.count, 8))
         let listHeight = CGFloat(visibleRows) * assetRowHeight + CGFloat(max(visibleRows - 1, 0)) * listRowGap + expandedHeight
@@ -3261,7 +3274,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private func makeStockChartArea(_ asset: DisplayAsset) -> NSView {
         let container = NSView()
         container.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
-        container.heightAnchor.constraint(equalToConstant: stockChartHeight).isActive = true
+        container.heightAnchor.constraint(equalToConstant: stockChartHeight(for: asset)).isActive = true
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.025).cgColor
         container.layer?.cornerRadius = 8
@@ -3295,6 +3308,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
                 summary.alignment = .centerY
                 summary.spacing = 5
                 summary.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
+                summary.heightAnchor.constraint(equalToConstant: 15).isActive = true
                 let periodLabel = makeMutedLabel(stockChartPeriod.title, alignment: leadingTextAlignment)
                 let spacer = NSView()
                 spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -3345,6 +3359,8 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
             alignment: leadingTextAlignment
         )
         label.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
+        label.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        label.setContentCompressionResistancePriority(.required, for: .vertical)
         label.lineBreakMode = .byTruncatingTail
         return label
     }
