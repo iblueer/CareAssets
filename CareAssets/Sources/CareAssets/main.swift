@@ -186,6 +186,10 @@ enum L10n {
     static var stockChartWeek: String { text("周动态", "Week", zhHant: "週動態", ja: "1週間", ar: "أسبوع", de: "Woche", fr: "Semaine", ko: "주간", ptPT: "Semana", es: "Semana") }
     static var stockChartMonth: String { text("月动态", "Month", zhHant: "月動態", ja: "1か月", ar: "شهر", de: "Monat", fr: "Mois", ko: "월간", ptPT: "Mês", es: "Mes") }
     static var stockChartYear: String { text("年动态", "Year", zhHant: "年動態", ja: "1年", ar: "سنة", de: "Jahr", fr: "Année", ko: "연간", ptPT: "Ano", es: "Año") }
+    static var chartOpen: String { text("开", "Open", zhHant: "開", ja: "始値", ar: "فتح", de: "Start", fr: "Ouverture", ko: "시가", ptPT: "Abertura", es: "Apertura") }
+    static var chartHigh: String { text("高", "High", zhHant: "高", ja: "高値", ar: "أعلى", de: "Hoch", fr: "Haut", ko: "고가", ptPT: "Máx.", es: "Máx.") }
+    static var chartLow: String { text("低", "Low", zhHant: "低", ja: "安値", ar: "أدنى", de: "Tief", fr: "Bas", ko: "저가", ptPT: "Mín.", es: "Mín.") }
+    static var chartClose: String { text("收", "Close", zhHant: "收", ja: "終値", ar: "إغلاق", de: "Schluss", fr: "Clôture", ko: "종가", ptPT: "Fecho", es: "Cierre") }
     static var stockChartLoading: String { text("正在加载折线数据", "Loading chart data", zhHant: "正在載入折線資料", ja: "チャートを読み込み中", ar: "جارٍ تحميل بيانات المخطط", de: "Diagrammdaten werden geladen", fr: "Chargement du graphique", ko: "차트 데이터 로드 중", ptPT: "A carregar dados do gráfico", es: "Cargando datos del gráfico") }
     static var stockChartNoData: String { text("当前数据源无折线数据", "No chart data from the current source", zhHant: "目前資料源無折線資料", ja: "現在のデータ元にはチャートデータがありません", ar: "لا توجد بيانات مخطط من المصدر الحالي", de: "Keine Diagrammdaten aus der aktuellen Quelle", fr: "Aucune donnée graphique pour cette source", ko: "현재 데이터 소스에 차트 데이터가 없습니다", ptPT: "Sem dados de gráfico nesta fonte", es: "Esta fuente no tiene datos de gráfico") }
     static var stockChartLoadFailed: String { text("折线数据加载失败", "Failed to load chart data", zhHant: "折線資料載入失敗", ja: "チャートの読み込みに失敗しました", ar: "فشل تحميل بيانات المخطط", de: "Diagrammdaten konnten nicht geladen werden", fr: "Échec du chargement du graphique", ko: "차트 데이터를 불러오지 못했습니다", ptPT: "Falha ao carregar o gráfico", es: "No se pudo cargar el gráfico") }
@@ -532,6 +536,11 @@ struct DisplayAsset: Sendable {
         guard let holdingQuantity, let averageBuyPrice,
               holdingQuantity > 0, averageBuyPrice > 0 else { return nil }
         return holdingQuantity * averageBuyPrice
+    }
+
+    var previousClose: Double? {
+        guard let currentPrice, let changePercent, changePercent > -100 else { return nil }
+        return currentPrice / (1.0 + changePercent / 100.0)
     }
 
     var hasPosition: Bool {
@@ -2516,6 +2525,9 @@ final class StockChartView: NSView {
     var points: [StockChartPoint] = [] {
         didSet { needsDisplay = true }
     }
+    var previousClose: Double? {
+        didSet { needsDisplay = true }
+    }
     var colorMode: PriceColorMode = .redFallGreenRise {
         didSet { needsDisplay = true }
     }
@@ -2529,24 +2541,42 @@ final class StockChartView: NSView {
 
         guard points.count > 1 else { return }
         let prices = points.map(\.price)
-        guard let minimum = prices.min(), let maximum = prices.max() else { return }
+        let scalePrices = prices + (previousClose.map { [$0] } ?? [])
+        guard let minimum = scalePrices.min(), let maximum = scalePrices.max() else { return }
 
         let insetBounds = bounds.insetBy(dx: 10, dy: 10)
         let priceRange = maximum - minimum
+        let yPosition: (Double) -> CGFloat = { price in
+            priceRange > 0
+                ? CGFloat((price - minimum) / priceRange)
+                : 0.5
+        }
+        let pointLocation: (Int) -> NSPoint = { index in
+            let progress = CGFloat(index) / CGFloat(self.points.count - 1)
+            return NSPoint(
+                x: insetBounds.minX + progress * insetBounds.width,
+                y: insetBounds.minY + yPosition(self.points[index].price) * insetBounds.height
+            )
+        }
+
+        if let previousClose {
+            let reference = NSBezierPath()
+            let y = insetBounds.minY + yPosition(previousClose) * insetBounds.height
+            reference.move(to: NSPoint(x: insetBounds.minX, y: y))
+            reference.line(to: NSPoint(x: insetBounds.maxX, y: y))
+            reference.lineWidth = 1
+            reference.setLineDash([4, 3], count: 2, phase: 0)
+            NSColor.white.withAlphaComponent(0.28).setStroke()
+            reference.stroke()
+        }
+
         let path = NSBezierPath()
         path.lineWidth = 1.6
         path.lineJoinStyle = .round
         path.lineCapStyle = .round
 
-        for (index, point) in points.enumerated() {
-            let progress = CGFloat(index) / CGFloat(points.count - 1)
-            let normalizedPrice = priceRange > 0
-                ? CGFloat((point.price - minimum) / priceRange)
-                : 0.5
-            let location = NSPoint(
-                x: insetBounds.minX + progress * insetBounds.width,
-                y: insetBounds.minY + normalizedPrice * insetBounds.height
-            )
+        for index in points.indices {
+            let location = pointLocation(index)
             if index == 0 {
                 path.move(to: location)
             } else {
@@ -2556,25 +2586,22 @@ final class StockChartView: NSView {
 
         chartColor.setStroke()
         path.stroke()
+
+        let highIndex = prices.firstIndex(of: maximum) ?? 0
+        let lowIndex = prices.firstIndex(of: minimum) ?? 0
+        let markerIndexes = Set([0, points.count - 1, highIndex, lowIndex])
+        chartColor.setFill()
+        for index in markerIndexes {
+            let location = pointLocation(index)
+            NSBezierPath(ovalIn: NSRect(x: location.x - 2.5, y: location.y - 2.5, width: 5, height: 5)).fill()
+        }
     }
 
     private var chartColor: NSColor {
         guard let first = points.first?.price, let last = points.last?.price else {
             return NSColor.white.withAlphaComponent(0.75)
         }
-        let change = last - first
-        switch colorMode {
-        case .white:
-            return NSColor.white.withAlphaComponent(0.88)
-        case .redRiseGreenFall:
-            return change >= 0
-                ? NSColor(calibratedRed: 1.0, green: 0.34, blue: 0.40, alpha: 0.95)
-                : NSColor(calibratedRed: 0.25, green: 0.88, blue: 0.56, alpha: 0.95)
-        case .redFallGreenRise:
-            return change >= 0
-                ? NSColor(calibratedRed: 0.25, green: 0.88, blue: 0.56, alpha: 0.95)
-                : NSColor(calibratedRed: 1.0, green: 0.34, blue: 0.40, alpha: 0.95)
-        }
+        return priceColor(for: last - first, mode: colorMode, whiteAlpha: 0.95)
     }
 }
 
@@ -3256,11 +3283,27 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
         switch state {
         case let .loaded(points):
+            if let change = chartChangePercent(points) {
+                let summary = NSStackView()
+                summary.orientation = .horizontal
+                summary.alignment = .centerY
+                summary.spacing = 5
+                summary.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
+                let periodLabel = makeMutedLabel(stockChartPeriod.title, alignment: leadingTextAlignment)
+                let spacer = NSView()
+                spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+                summary.addArrangedSubview(periodLabel)
+                summary.addArrangedSubview(spacer)
+                summary.addArrangedSubview(makePercentTag(formatPercent(change), color: chartColor(for: change)))
+                chartContent.addArrangedSubview(summary)
+            }
+            chartContent.addArrangedSubview(makeChartStatsLabel(points, currency: asset.currency))
             let chart = StockChartView()
             chart.points = points
+            chart.previousClose = asset.previousClose
             chart.colorMode = colorMode
             chart.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
-            chart.heightAnchor.constraint(greaterThanOrEqualToConstant: asset.hasPosition ? 78 : 96).isActive = true
+            chart.heightAnchor.constraint(greaterThanOrEqualToConstant: asset.hasPosition ? 54 : 72).isActive = true
             chartContent.addArrangedSubview(chart)
         case .loading:
             addCenteredChartMessage(L10n.stockChartLoading, to: chartContent)
@@ -3270,6 +3313,34 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
             addCenteredChartMessage(L10n.stockChartLoadFailed, to: chartContent)
         }
         return container
+    }
+
+    private func chartChangePercent(_ points: [StockChartPoint]) -> Double? {
+        guard let first = points.first?.price, let last = points.last?.price, first != 0 else { return nil }
+        return (last - first) / first * 100.0
+    }
+
+    private func chartColor(for change: Double) -> NSColor {
+        priceColor(for: change, mode: colorMode, whiteAlpha: 1)
+    }
+
+    private func makeChartStatsLabel(_ points: [StockChartPoint], currency: String?) -> NSTextField {
+        let prices = points.map(\.price)
+        let open = prices.first ?? 0
+        let high = prices.max() ?? open
+        let low = prices.min() ?? open
+        let close = prices.last ?? open
+        let currencyCode = currency ?? ""
+        let text = "\(L10n.chartOpen) \(formatCurrencyWithCode(open, currencyCode: currencyCode, compact: false)) · \(L10n.chartHigh) \(formatCurrencyWithCode(high, currencyCode: currencyCode, compact: false)) · \(L10n.chartLow) \(formatCurrencyWithCode(low, currencyCode: currencyCode, compact: false)) · \(L10n.chartClose) \(formatCurrencyWithCode(close, currencyCode: currencyCode, compact: false))"
+        let label = makeLabel(
+            text,
+            font: appFont(ofSize: 9, weight: .medium),
+            color: NSColor.white.withAlphaComponent(0.58),
+            alignment: leadingTextAlignment
+        )
+        label.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
+        label.lineBreakMode = .byTruncatingTail
+        return label
     }
 
     private func addCenteredChartMessage(_ text: String, to container: NSView) {
@@ -4055,7 +4126,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         makePercentTag(formatPercent(asset.positionProfitPercent), color: positionColor(for: asset))
     }
 
-    private func makePercentTag(_ text: String, color: NSColor) -> NSView {
+    private func makePercentTag(_ text: String, color: NSColor, width: CGFloat? = nil) -> NSView {
         let container = NSView()
         container.wantsLayer = true
         container.layer?.backgroundColor = color.withAlphaComponent(0.16).cgColor
@@ -4063,7 +4134,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         container.heightAnchor.constraint(equalToConstant: 15).isActive = true
 
         let label = makeLabel(text, font: appFont(ofSize: 9, weight: .bold), color: color, alignment: .center)
-        container.widthAnchor.constraint(equalToConstant: percentTagWidth).isActive = true
+        container.widthAnchor.constraint(equalToConstant: width ?? percentTagWidth).isActive = true
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
 
