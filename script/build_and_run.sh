@@ -41,6 +41,11 @@ case "$MODE" in
     build_app
     open_app
     ;;
+  --preview|preview)
+    stop_app
+    build_app
+    /usr/bin/open -n --env CAREASSETS_PREVIEW=1 "$APP_BUNDLE"
+    ;;
   --debug|debug)
     stop_app
     build_app
@@ -66,7 +71,7 @@ case "$MODE" in
     verify_app
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|preview|--debug|--logs|--telemetry|--verify]" >&2
     exit 2
     ;;
 esac

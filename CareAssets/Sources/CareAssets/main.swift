@@ -174,10 +174,21 @@ enum L10n {
     static var clear: String { text("清空", "Clear", zhHant: "清空", ja: "クリア", ar: "مسح", de: "Leeren", fr: "Effacer", ko: "비우기", ptPT: "Limpar", es: "Limpiar") }
     static var unrealizedProfit: String { text("浮盈", "Unrealized gain", zhHant: "浮盈", ja: "含み益", ar: "ربح غير محقق", de: "Buchgewinn", fr: "Gain latent", ko: "평가이익", ptPT: "Ganho não realizado", es: "Ganancia no realizada") }
     static var unrealizedLoss: String { text("浮亏", "Unrealized loss", zhHant: "浮虧", ja: "含み損", ar: "خسارة غير محققة", de: "Buchverlust", fr: "Perte latente", ko: "평가손실", ptPT: "Perda não realizada", es: "Pérdida no realizada") }
+    static var profitLoss: String { text("盈亏", "P/L", zhHant: "盈虧", ja: "損益", ar: "الربح/الخسارة", de: "G/V", fr: "P/L", ko: "손익", ptPT: "G/P", es: "G/P") }
+    static var cost: String { text("成本", "Cost", zhHant: "成本", ja: "取得額", ar: "التكلفة", de: "Kosten", fr: "Coût", ko: "원가", ptPT: "Custo", es: "Coste") }
     static var marketValue: String { text("市值", "Value", zhHant: "市值", ja: "評価額", ar: "القيمة", de: "Wert", fr: "Valeur", ko: "평가액", ptPT: "Valor", es: "Valor") }
     static var colorSetting: String { text("价格颜色", "Price color", zhHant: "價格顏色", ja: "価格色", ar: "لون السعر", de: "Preisfarbe", fr: "Couleur prix", ko: "가격 색상", ptPT: "Cor preço", es: "Color precio") }
     static var languageSetting: String { text("语言", "Language", zhHant: "語言", ja: "言語", ar: "اللغة", de: "Sprache", fr: "Langue", ko: "언어", ptPT: "Idioma", es: "Idioma") }
     static var stockDataSourceSetting: String { text("股票数据源", "Stock data source", zhHant: "股票資料源", ja: "株価データ元", ar: "مصدر بيانات الأسهم", de: "Aktien-Datenquelle", fr: "Source actions", ko: "주식 데이터 소스", ptPT: "Fonte de ações", es: "Fuente acciones") }
+    static var stockChartSetting: String { text("股价折线", "Price chart", zhHant: "股價折線", ja: "株価チャート", ar: "مخطط السعر", de: "Kursdiagramm", fr: "Courbe du cours", ko: "주가 차트", ptPT: "Gráfico de preço", es: "Gráfico de precio") }
+    static var stockChartOff: String { text("关闭", "Off", zhHant: "關閉", ja: "オフ", ar: "إيقاف", de: "Aus", fr: "Désactivé", ko: "끔", ptPT: "Desligado", es: "Desactivado") }
+    static var stockChartDay: String { text("日动态", "Day", zhHant: "日動態", ja: "1日", ar: "يوم", de: "Tag", fr: "Jour", ko: "일간", ptPT: "Dia", es: "Día") }
+    static var stockChartWeek: String { text("周动态", "Week", zhHant: "週動態", ja: "1週間", ar: "أسبوع", de: "Woche", fr: "Semaine", ko: "주간", ptPT: "Semana", es: "Semana") }
+    static var stockChartMonth: String { text("月动态", "Month", zhHant: "月動態", ja: "1か月", ar: "شهر", de: "Monat", fr: "Mois", ko: "월간", ptPT: "Mês", es: "Mes") }
+    static var stockChartYear: String { text("年动态", "Year", zhHant: "年動態", ja: "1年", ar: "سنة", de: "Jahr", fr: "Année", ko: "연간", ptPT: "Ano", es: "Año") }
+    static var stockChartLoading: String { text("正在加载折线数据", "Loading chart data", zhHant: "正在載入折線資料", ja: "チャートを読み込み中", ar: "جارٍ تحميل بيانات المخطط", de: "Diagrammdaten werden geladen", fr: "Chargement du graphique", ko: "차트 데이터 로드 중", ptPT: "A carregar dados do gráfico", es: "Cargando datos del gráfico") }
+    static var stockChartNoData: String { text("当前数据源无折线数据", "No chart data from the current source", zhHant: "目前資料源無折線資料", ja: "現在のデータ元にはチャートデータがありません", ar: "لا توجد بيانات مخطط من المصدر الحالي", de: "Keine Diagrammdaten aus der aktuellen Quelle", fr: "Aucune donnée graphique pour cette source", ko: "현재 데이터 소스에 차트 데이터가 없습니다", ptPT: "Sem dados de gráfico nesta fonte", es: "Esta fuente no tiene datos de gráfico") }
+    static var stockChartLoadFailed: String { text("折线数据加载失败", "Failed to load chart data", zhHant: "折線資料載入失敗", ja: "チャートの読み込みに失敗しました", ar: "فشل تحميل بيانات المخطط", de: "Diagrammdaten konnten nicht geladen werden", fr: "Échec du chargement du graphique", ko: "차트 데이터를 불러오지 못했습니다", ptPT: "Falha ao carregar o gráfico", es: "No se pudo cargar el gráfico") }
     static var chineseStockDataSource: String { text("中文源（东方财富/腾讯）", "Chinese source (Eastmoney/Tencent)", zhHant: "中文源（東方財富/騰訊）", ja: "中国語ソース", ar: "مصدر صيني", de: "Chinesische Quelle", fr: "Source chinoise", ko: "중국어 소스", ptPT: "Fonte chinesa", es: "Fuente china") }
     static var eastMoneyStockDataSource: String { text("东方财富", "Eastmoney", zhHant: "東方財富", ja: "Eastmoney", ar: "Eastmoney", de: "Eastmoney", fr: "Eastmoney", ko: "Eastmoney", ptPT: "Eastmoney", es: "Eastmoney") }
     static var tencentStockDataSource: String { text("腾讯", "Tencent", zhHant: "騰訊", ja: "Tencent", ar: "Tencent", de: "Tencent", fr: "Tencent", ko: "Tencent", ptPT: "Tencent", es: "Tencent") }
@@ -332,6 +343,70 @@ enum StockDataSource: String, Codable, Sendable, CaseIterable {
     }
 }
 
+enum StockChartPeriod: String, Codable, Sendable, CaseIterable {
+    case off
+    case day
+    case week
+    case month
+    case year
+
+    var title: String {
+        switch self {
+        case .off:
+            return L10n.stockChartOff
+        case .day:
+            return L10n.stockChartDay
+        case .week:
+            return L10n.stockChartWeek
+        case .month:
+            return L10n.stockChartMonth
+        case .year:
+            return L10n.stockChartYear
+        }
+    }
+
+    var yahooRangeAndInterval: (range: String, interval: String)? {
+        switch self {
+        case .off:
+            return nil
+        case .day:
+            return ("1d", "5m")
+        case .week:
+            return ("5d", "30m")
+        case .month:
+            return ("1mo", "1d")
+        case .year:
+            return ("1y", "1d")
+        }
+    }
+
+    var eastMoneyLookbackDays: Int? {
+        switch self {
+        case .off, .day:
+            return nil
+        case .week:
+            return 10
+        case .month:
+            return 45
+        case .year:
+            return 400
+        }
+    }
+
+    var eastMoneyPointLimit: Int? {
+        switch self {
+        case .off, .day:
+            return nil
+        case .week:
+            return 5
+        case .month:
+            return 22
+        case .year:
+            return 252
+        }
+    }
+}
+
 struct TrackedAsset: Codable, Sendable {
     var type: AssetType
     var name: String
@@ -349,6 +424,7 @@ struct AppConfig: Codable, Sendable {
     var priceColorMode: PriceColorMode
     var statusBarBackgroundMode: StatusBarBackgroundMode
     var stockDataSource: StockDataSource
+    var stockChartPeriod: StockChartPeriod
     var language: AppLanguage
     var assets: [TrackedAsset]
 
@@ -359,6 +435,7 @@ struct AppConfig: Codable, Sendable {
         priceColorMode: .redFallGreenRise,
         statusBarBackgroundMode: .dark,
         stockDataSource: .tencent,
+        stockChartPeriod: .day,
         language: .system,
         assets: [
             TrackedAsset(type: .gold, name: L10n.gold, symbol: "JD_GOLD", canonicalSymbol: "GOLD:JD_GOLD", holdingQuantity: nil, averageBuyPrice: nil, visibleInMenuBar: true),
@@ -374,6 +451,7 @@ struct AppConfig: Codable, Sendable {
         priceColorMode: PriceColorMode = .redFallGreenRise,
         statusBarBackgroundMode: StatusBarBackgroundMode = .dark,
         stockDataSource: StockDataSource = .tencent,
+        stockChartPeriod: StockChartPeriod = .day,
         language: AppLanguage = .system,
         assets: [TrackedAsset]
     ) {
@@ -383,6 +461,7 @@ struct AppConfig: Codable, Sendable {
         self.priceColorMode = priceColorMode
         self.statusBarBackgroundMode = statusBarBackgroundMode
         self.stockDataSource = stockDataSource
+        self.stockChartPeriod = stockChartPeriod
         self.language = language
         self.assets = assets
     }
@@ -394,6 +473,7 @@ struct AppConfig: Codable, Sendable {
         case priceColorMode
         case statusBarBackgroundMode
         case stockDataSource
+        case stockChartPeriod
         case language
         case assets
     }
@@ -406,6 +486,7 @@ struct AppConfig: Codable, Sendable {
         priceColorMode = try container.decodeIfPresent(PriceColorMode.self, forKey: .priceColorMode) ?? .redFallGreenRise
         statusBarBackgroundMode = try container.decodeIfPresent(StatusBarBackgroundMode.self, forKey: .statusBarBackgroundMode) ?? .dark
         stockDataSource = try container.decodeIfPresent(StockDataSource.self, forKey: .stockDataSource) ?? .tencent
+        stockChartPeriod = try container.decodeIfPresent(StockChartPeriod.self, forKey: .stockChartPeriod) ?? .day
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         assets = try container.decode([TrackedAsset].self, forKey: .assets)
     }
@@ -445,6 +526,12 @@ struct DisplayAsset: Sendable {
     var positionMarketValue: Double? {
         guard let currentPrice, let holdingQuantity, holdingQuantity > 0 else { return nil }
         return currentPrice * holdingQuantity
+    }
+
+    var positionCost: Double? {
+        guard let holdingQuantity, let averageBuyPrice,
+              holdingQuantity > 0, averageBuyPrice > 0 else { return nil }
+        return holdingQuantity * averageBuyPrice
     }
 
     var hasPosition: Bool {
@@ -1099,6 +1186,16 @@ private struct YahooChart: Decodable {
 
 private struct YahooResult: Decodable {
     var meta: YahooMeta
+    var timestamp: [Int]?
+    var indicators: YahooIndicators?
+}
+
+private struct YahooIndicators: Decodable {
+    var quote: [YahooQuoteSeries]?
+}
+
+private struct YahooQuoteSeries: Decodable {
+    var close: [Double?]?
 }
 
 private struct YahooMeta: Decodable {
@@ -1204,6 +1301,27 @@ private struct EastMoneyQuoteItem: Decodable {
         case updatedAt = "f124"
         case scale = "f152"
     }
+}
+
+private struct EastMoneyChartResponse: Decodable {
+    var data: EastMoneyChartData?
+}
+
+private struct EastMoneyChartData: Decodable {
+    var trends: [String]?
+    var klines: [String]?
+}
+
+struct StockChartPoint: Sendable {
+    var date: Date
+    var price: Double
+}
+
+enum StockChartState: Sendable {
+    case loading
+    case loaded([StockChartPoint])
+    case unavailable
+    case failed
 }
 
 private struct RawStockQuote {
@@ -1658,6 +1776,103 @@ extension AssetService {
         return uppercased
     }
 
+    func fetchStockChart(_ asset: TrackedAsset, dataSource: StockDataSource, period: StockChartPeriod) async throws -> [StockChartPoint] {
+        guard asset.type == .stock, period != .off else { return [] }
+        switch dataSource {
+        case .eastMoney:
+            return try await fetchEastMoneyStockChart(asset, period: period)
+        case .yahooFinance:
+            return try await fetchYahooStockChart(asset, period: period)
+        case .tencent:
+            throw NSError(domain: "CareAssets.TencentChart", code: 1)
+        }
+    }
+
+    private func fetchEastMoneyStockChart(_ asset: TrackedAsset, period: StockChartPeriod) async throws -> [StockChartPoint] {
+        guard let secID = eastMoneySecID(for: asset) else {
+            throw NSError(domain: "CareAssets.EastMoneyChart", code: 1)
+        }
+
+        if period == .day {
+            var components = URLComponents(string: "https://push2his.eastmoney.com/api/qt/stock/trends2/get")!
+            components.queryItems = [
+                URLQueryItem(name: "secid", value: secID),
+                URLQueryItem(name: "fields1", value: "f1,f2,f3,f4,f5,f6,f7,f8"),
+                URLQueryItem(name: "fields2", value: "f51,f52,f53,f54,f55,f56,f57,f58"),
+                URLQueryItem(name: "ndays", value: "1"),
+                URLQueryItem(name: "iscr", value: "0")
+            ]
+            guard let url = components.url else { throw NSError(domain: "CareAssets.EastMoneyChart", code: 2) }
+            let data = try await requestData(from: url)
+            let response = try JSONDecoder().decode(EastMoneyChartResponse.self, from: data)
+            let points = (response.data?.trends ?? []).compactMap(parseEastMoneyChartPoint)
+            guard points.count > 1 else { throw NSError(domain: "CareAssets.EastMoneyChart", code: 3) }
+            return points
+        }
+
+        let end = Date()
+        let start = Calendar(identifier: .gregorian).date(byAdding: .day, value: -(period.eastMoneyLookbackDays ?? 400), to: end) ?? end
+        var components = URLComponents(string: "https://push2his.eastmoney.com/api/qt/stock/kline/get")!
+        components.queryItems = [
+            URLQueryItem(name: "secid", value: secID),
+            URLQueryItem(name: "fields1", value: "f1,f2,f3,f4,f5,f6"),
+            URLQueryItem(name: "fields2", value: "f51,f52,f53,f54,f55,f56"),
+            URLQueryItem(name: "klt", value: "101"),
+            URLQueryItem(name: "fqt", value: "1"),
+            URLQueryItem(name: "beg", value: eastMoneyDateString(start)),
+            URLQueryItem(name: "end", value: eastMoneyDateString(end)),
+            URLQueryItem(name: "lmt", value: "500")
+        ]
+        guard let url = components.url else { throw NSError(domain: "CareAssets.EastMoneyChart", code: 4) }
+        let data = try await requestData(from: url)
+        let response = try JSONDecoder().decode(EastMoneyChartResponse.self, from: data)
+        let decodedPoints = (response.data?.klines ?? []).compactMap(parseEastMoneyChartPoint)
+        let points = period.eastMoneyPointLimit.map { Array(decodedPoints.suffix($0)) } ?? decodedPoints
+        guard points.count > 1 else { throw NSError(domain: "CareAssets.EastMoneyChart", code: 5) }
+        return points
+    }
+
+    private func fetchYahooStockChart(_ asset: TrackedAsset, period: StockChartPeriod) async throws -> [StockChartPoint] {
+        guard let rangeAndInterval = period.yahooRangeAndInterval else { return [] }
+        let symbol = yahooStockSymbol(for: asset)
+        let encodedSymbol = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
+        let paths = [
+            "https://query2.finance.yahoo.com/v8/finance/chart/\(encodedSymbol)?range=\(rangeAndInterval.range)&interval=\(rangeAndInterval.interval)",
+            "https://query1.finance.yahoo.com/v8/finance/chart/\(encodedSymbol)?range=\(rangeAndInterval.range)&interval=\(rangeAndInterval.interval)"
+        ]
+        var lastError: Error?
+        for path in paths {
+            do {
+                let data = try await requestData(from: URL(string: path)!)
+                let response = try JSONDecoder().decode(YahooChartResponse.self, from: data)
+                guard let result = response.chart.result?.first,
+                      let timestamps = result.timestamp,
+                      let closes = result.indicators?.quote?.first?.close else {
+                    throw NSError(domain: "CareAssets.YahooChart", code: 1)
+                }
+                let points: [StockChartPoint] = zip(timestamps, closes).compactMap { pair in
+                    let (timestamp, close) = pair
+                    guard let close, close.isFinite, close > 0 else { return nil }
+                    return StockChartPoint(date: Date(timeIntervalSince1970: TimeInterval(timestamp)), price: close)
+                }
+                guard points.count > 1 else { throw NSError(domain: "CareAssets.YahooChart", code: 2) }
+                return points
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? NSError(domain: "CareAssets.YahooChart", code: 3)
+    }
+
+    private func parseEastMoneyChartPoint(_ raw: String) -> StockChartPoint? {
+        let fields = raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        guard fields.count >= 3,
+              let date = parseChartDate(fields[0]),
+              let price = Double(fields[2]),
+              price.isFinite, price > 0 else { return nil }
+        return StockChartPoint(date: date, price: price)
+    }
+
     private func fetchStockQuote(_ asset: TrackedAsset, dataSource: StockDataSource) async throws -> RawStockQuote {
         switch dataSource {
         case .eastMoney:
@@ -2059,169 +2274,9 @@ final class StatusTickerView: NSView {
     }
 }
 
-private enum AssetDropIndicatorEdge {
-    case top
-    case bottom
-}
-
 final class FlippedDocumentView: NSView {
-    var dropIndicatorGap: CGFloat = 0
-
-    private weak var dropIndicatorOwner: NSView?
-    private weak var assetStackView: NSStackView?
-    private var onMoveAsset: ((String, String, Bool) -> Void)?
-    private var dropIndicatorRect: NSRect? {
-        didSet {
-            needsDisplay = true
-        }
-    }
-
     override var isFlipped: Bool {
         true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard let dropIndicatorRect else { return }
-
-        NSColor(calibratedRed: 0.45, green: 0.63, blue: 1.0, alpha: 0.95).setFill()
-        NSBezierPath(roundedRect: dropIndicatorRect, xRadius: 1, yRadius: 1).fill()
-    }
-
-    fileprivate func showDropIndicator(for row: AssetReorderRowView, edge: AssetDropIndicatorEdge) {
-        showDropIndicator(for: row, edge: edge, owner: row)
-    }
-
-    func configureGapDropDestination(
-        stackView: NSStackView,
-        isEnabled: Bool,
-        onMoveAsset: @escaping (String, String, Bool) -> Void
-    ) {
-        assetStackView = stackView
-        self.onMoveAsset = onMoveAsset
-        if isEnabled {
-            registerForDraggedTypes([.careAssetsAssetID])
-        } else {
-            unregisterDraggedTypes()
-        }
-    }
-
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        updateGapDropIndicator(sender) ? .move : []
-    }
-
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        updateGapDropIndicator(sender) ? .move : []
-    }
-
-    override func draggingExited(_ sender: NSDraggingInfo?) {
-        clearDropIndicator(ownedBy: self)
-    }
-
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        gapDropTarget(for: sender) != nil
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        defer { clearDropIndicator(ownedBy: self) }
-        guard let sourceID = sender.draggingPasteboard.string(forType: .careAssetsAssetID),
-              let target = gapDropTarget(for: sender),
-              sourceID != target.assetID else {
-            return false
-        }
-
-        onMoveAsset?(sourceID, target.assetID, true)
-        return true
-    }
-
-    private func updateGapDropIndicator(_ sender: NSDraggingInfo) -> Bool {
-        guard sender.draggingPasteboard.string(forType: .careAssetsAssetID) != nil,
-              let target = gapDropTarget(for: sender) else {
-            clearDropIndicator(ownedBy: self)
-            return false
-        }
-
-        showDropIndicator(for: target, edge: .bottom, owner: self)
-        return true
-    }
-
-    private func gapDropTarget(for sender: NSDraggingInfo) -> AssetReorderRowView? {
-        let location = convert(sender.draggingLocation, from: nil)
-        return gapDropTarget(at: location)
-    }
-
-    fileprivate func gapDropTarget(at location: NSPoint) -> AssetReorderRowView? {
-        guard let assetStackView else { return nil }
-        let rows = assetStackView.arrangedSubviews.compactMap { $0 as? AssetReorderRowView }
-
-        for index in 0..<(max(rows.count - 1, 0)) {
-            let upperRow = rows[index]
-            let lowerRow = rows[index + 1]
-            let upperRect = upperRow.convert(upperRow.bounds, to: self)
-            let lowerRect = lowerRow.convert(lowerRow.bounds, to: self)
-            if location.y >= upperRect.maxY && location.y <= lowerRect.minY {
-                return upperRow
-            }
-        }
-        return nil
-    }
-
-    private func showDropIndicator(
-        for row: AssetReorderRowView,
-        edge: AssetDropIndicatorEdge,
-        owner: NSView
-    ) {
-        let lineHeight: CGFloat = 2
-        let rowRect = row.convert(row.bounds, to: self)
-        let boundaryY = edge == .top
-            ? rowRect.minY - dropIndicatorGap / 2
-            : rowRect.maxY + dropIndicatorGap / 2
-        let lineY = min(max(boundaryY - lineHeight / 2, bounds.minY), bounds.maxY - lineHeight)
-
-        dropIndicatorOwner = owner
-        dropIndicatorRect = NSRect(x: rowRect.minX, y: lineY, width: rowRect.width, height: lineHeight)
-    }
-
-    func clearDropIndicator(for row: AssetReorderRowView) {
-        clearDropIndicator(ownedBy: row)
-    }
-
-    private func clearDropIndicator(ownedBy owner: NSView) {
-        guard dropIndicatorOwner === owner else { return }
-        clearDropIndicator()
-    }
-
-    func clearDropIndicator() {
-        dropIndicatorOwner = nil
-        dropIndicatorRect = nil
-    }
-}
-
-final class ReorderHandleView: NSView {
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: 12, height: 18)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        NSColor.white.withAlphaComponent(0.62).setFill()
-
-        let diameter: CGFloat = 2.5
-        for xOffset in [-2.5, 2.5] as [CGFloat] {
-            for yOffset in [-4, 0, 4] as [CGFloat] {
-                let rect = NSRect(
-                    x: bounds.midX + xOffset - diameter / 2,
-                    y: bounds.midY + yOffset - diameter / 2,
-                    width: diameter,
-                    height: diameter
-                )
-                NSBezierPath(ovalIn: rect).fill()
-            }
-        }
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .openHand)
     }
 }
 
@@ -2229,8 +2284,27 @@ extension NSPasteboard.PasteboardType {
     static let careAssetsAssetID = NSPasteboard.PasteboardType("com.careassets.asset-id")
 }
 
+final class ReorderHandleView: NSView {
+    override var intrinsicContentSize: NSSize { NSSize(width: 12, height: 18) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        NSColor.white.withAlphaComponent(0.62).setFill()
+        let diameter: CGFloat = 2.5
+        for xOffset in [-2.5, 2.5] as [CGFloat] {
+            for yOffset in [-4, 0, 4] as [CGFloat] {
+                let rect = NSRect(x: bounds.midX + xOffset - diameter / 2, y: bounds.midY + yOffset - diameter / 2, width: diameter, height: diameter)
+                NSBezierPath(ovalIn: rect).fill()
+            }
+        }
+    }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+}
+
 final class AssetReorderRowView: NSStackView, NSDraggingSource {
     let assetID: String
+    var onClick: (() -> Void)?
     var allowsReordering = true {
         didSet {
             if !allowsReordering {
@@ -2242,8 +2316,18 @@ final class AssetReorderRowView: NSStackView, NSDraggingSource {
     }
     var onMoveAsset: ((String, String, Bool) -> Void)?
 
+    private enum DropIndicatorPosition {
+        case top
+        case bottom
+    }
+
     private var mouseDownEvent: NSEvent?
     private var didBeginDrag = false
+    private var dropIndicatorPosition: DropIndicatorPosition? {
+        didSet {
+            needsDisplay = true
+        }
+    }
 
     init(assetID: String) {
         self.assetID = assetID
@@ -2255,19 +2339,28 @@ final class AssetReorderRowView: NSStackView, NSDraggingSource {
         nil
     }
 
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let dropIndicatorPosition else { return }
+
+        let lineHeight: CGFloat = 2
+        let y = dropIndicatorPosition == .top ? bounds.maxY - lineHeight : bounds.minY
+        let rect = NSRect(x: 0, y: y, width: bounds.width, height: lineHeight)
+        NSColor(calibratedRed: 0.45, green: 0.63, blue: 1.0, alpha: 0.95).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1).fill()
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         return isButtonHit(hit) ? hit : self
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard allowsReordering else { return }
         mouseDownEvent = event
         didBeginDrag = false
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard allowsReordering else { return }
         guard !didBeginDrag else { return }
         guard let mouseDownEvent else { return }
 
@@ -2275,18 +2368,32 @@ final class AssetReorderRowView: NSStackView, NSDraggingSource {
         let dy = event.locationInWindow.y - mouseDownEvent.locationInWindow.y
         guard hypot(dx, dy) > 4 else { return }
 
+        guard allowsReordering else {
+            didBeginDrag = true
+            return
+        }
+
         didBeginDrag = true
         let pasteboardItem = NSPasteboardItem()
         pasteboardItem.setString(assetID, forType: .careAssetsAssetID)
 
         let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
         draggingItem.setDraggingFrame(bounds, contents: draggingImage())
-        beginDraggingSession(with: [draggingItem], event: event, source: self)
+        beginDraggingSession(with: [draggingItem], event: mouseDownEvent, source: self)
     }
 
     override func mouseUp(with event: NSEvent) {
+        if !allowsReordering, !didBeginDrag {
+            onClick?()
+        }
         mouseDownEvent = nil
         didBeginDrag = false
+    }
+
+    override func resetCursorRects() {
+        if !allowsReordering, onClick != nil {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -2313,10 +2420,6 @@ final class AssetReorderRowView: NSStackView, NSDraggingSource {
         clearDropIndicator()
     }
 
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        allowsReordering && draggingSourceID(from: sender) != nil
-    }
-
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         defer { clearDropIndicator() }
         guard allowsReordering else { return false }
@@ -2336,10 +2439,6 @@ final class AssetReorderRowView: NSStackView, NSDraggingSource {
 
     func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
         true
-    }
-
-    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        dropIndicatorDocument?.clearDropIndicator()
     }
 
     private func isButtonHit(_ hit: NSView) -> Bool {
@@ -2369,23 +2468,11 @@ final class AssetReorderRowView: NSStackView, NSDraggingSource {
 
     private func updateDropIndicator(_ sender: NSDraggingInfo) {
         let location = convert(sender.draggingLocation, from: nil)
-        let edge: AssetDropIndicatorEdge = location.y < bounds.midY ? .bottom : .top
-        dropIndicatorDocument?.showDropIndicator(for: self, edge: edge)
+        dropIndicatorPosition = location.y < bounds.midY ? .bottom : .top
     }
 
     private func clearDropIndicator() {
-        dropIndicatorDocument?.clearDropIndicator(for: self)
-    }
-
-    private var dropIndicatorDocument: FlippedDocumentView? {
-        var ancestor = superview
-        while let view = ancestor {
-            if let document = view as? FlippedDocumentView {
-                return document
-            }
-            ancestor = view.superview
-        }
-        return nil
+        dropIndicatorPosition = nil
     }
 }
 
@@ -2422,6 +2509,72 @@ final class ClickableSearchResultRowView: NSStackView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+final class StockChartView: NSView {
+    var points: [StockChartPoint] = [] {
+        didSet { needsDisplay = true }
+    }
+    var colorMode: PriceColorMode = .redFallGreenRise {
+        didSet { needsDisplay = true }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let background = NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8)
+        NSColor.white.withAlphaComponent(0.035).setFill()
+        background.fill()
+
+        guard points.count > 1 else { return }
+        let prices = points.map(\.price)
+        guard let minimum = prices.min(), let maximum = prices.max() else { return }
+
+        let insetBounds = bounds.insetBy(dx: 10, dy: 10)
+        let priceRange = maximum - minimum
+        let path = NSBezierPath()
+        path.lineWidth = 1.6
+        path.lineJoinStyle = .round
+        path.lineCapStyle = .round
+
+        for (index, point) in points.enumerated() {
+            let progress = CGFloat(index) / CGFloat(points.count - 1)
+            let normalizedPrice = priceRange > 0
+                ? CGFloat((point.price - minimum) / priceRange)
+                : 0.5
+            let location = NSPoint(
+                x: insetBounds.minX + progress * insetBounds.width,
+                y: insetBounds.minY + normalizedPrice * insetBounds.height
+            )
+            if index == 0 {
+                path.move(to: location)
+            } else {
+                path.line(to: location)
+            }
+        }
+
+        chartColor.setStroke()
+        path.stroke()
+    }
+
+    private var chartColor: NSColor {
+        guard let first = points.first?.price, let last = points.last?.price else {
+            return NSColor.white.withAlphaComponent(0.75)
+        }
+        let change = last - first
+        switch colorMode {
+        case .white:
+            return NSColor.white.withAlphaComponent(0.88)
+        case .redRiseGreenFall:
+            return change >= 0
+                ? NSColor(calibratedRed: 1.0, green: 0.34, blue: 0.40, alpha: 0.95)
+                : NSColor(calibratedRed: 0.25, green: 0.88, blue: 0.56, alpha: 0.95)
+        case .redFallGreenRise:
+            return change >= 0
+                ? NSColor(calibratedRed: 0.25, green: 0.88, blue: 0.56, alpha: 0.95)
+                : NSColor(calibratedRed: 1.0, green: 0.34, blue: 0.40, alpha: 0.95)
+        }
     }
 }
 
@@ -2492,6 +2645,8 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     var onColorModeChange: ((PriceColorMode) -> Void)?
     var onStatusBarBackgroundModeChange: ((StatusBarBackgroundMode) -> Void)?
     var onStockDataSourceChange: ((StockDataSource) -> Void)?
+    var onStockChartPeriodChange: ((StockChartPeriod) -> Void)?
+    var onRequestStockChart: ((String) -> Void)?
     var onLanguageChange: ((AppLanguage) -> Void)?
     var onPreferredContentSizeChange: ((NSSize) -> Void)?
     var onQuit: (() -> Void)?
@@ -2502,6 +2657,9 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private var colorMode: PriceColorMode = .white
     private var statusBarBackgroundMode: StatusBarBackgroundMode = .dark
     private var stockDataSource: StockDataSource = .tencent
+    private var stockChartPeriod: StockChartPeriod = .day
+    private var expandedAssetID: String?
+    private var stockChartStates: [String: StockChartState] = [:]
     private var language: AppLanguage = .system
     private var isSearchOpen = false
     private var isEditingAssets = false
@@ -2523,6 +2681,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private var contentWidth: CGFloat { panelWidth - 36 }
     private var scrollWidth: CGFloat { isRTL ? contentWidth : contentWidth + horizontalInset }
     private let assetRowHeight: CGFloat = 52
+    private let stockChartHeight: CGFloat = 104
     private let searchResultRowHeight: CGFloat = 52
     private let searchGroupHeaderHeight: CGFloat = 30
     private let searchGroupGap: CGFloat = 16
@@ -2538,6 +2697,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private let stackSpacing: CGFloat = 10
     private let footerExtraTopSpacing: CGFloat = 6
     private let rtlScrollerGutterWidth: CGFloat = 10
+    private let percentTagWidth: CGFloat = 46
     private var rightColumnWidth: CGFloat { isEditingAssets ? 206 : 220 }
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -2555,18 +2715,47 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         render()
     }
 
-    func update(assets: [DisplayAsset], countdown: Int, isRefreshing: Bool, colorMode: PriceColorMode, statusBarBackgroundMode: StatusBarBackgroundMode, stockDataSource: StockDataSource, language: AppLanguage) {
+    func update(assets: [DisplayAsset], countdown: Int, isRefreshing: Bool, colorMode: PriceColorMode, statusBarBackgroundMode: StatusBarBackgroundMode, stockDataSource: StockDataSource, stockChartPeriod: StockChartPeriod, language: AppLanguage) {
+        let chartContextChanged = self.stockDataSource != stockDataSource || self.stockChartPeriod != stockChartPeriod
         self.assets = assets
         self.countdown = countdown
         self.isRefreshing = isRefreshing
         self.colorMode = colorMode
         self.statusBarBackgroundMode = statusBarBackgroundMode
         self.stockDataSource = stockDataSource
+        self.stockChartPeriod = stockChartPeriod
         self.language = language
+        if let expandedAssetID,
+           !assets.contains(where: { $0.id == expandedAssetID && $0.type == .stock }) {
+            self.expandedAssetID = nil
+            stockChartStates.removeValue(forKey: expandedAssetID)
+        }
+        if stockChartPeriod == .off {
+            expandedAssetID = nil
+            stockChartStates.removeAll()
+        } else if chartContextChanged {
+            stockChartStates.removeAll()
+            if let expandedAssetID {
+                stockChartStates[expandedAssetID] = stockDataSource == .tencent ? .unavailable : .loading
+                if stockDataSource != .tencent {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onRequestStockChart?(expandedAssetID)
+                    }
+                }
+            }
+        }
         if isSearchOpen {
             return
         }
         render()
+    }
+
+    func updateStockChart(assetID: String, dataSource: StockDataSource, period: StockChartPeriod, state: StockChartState) {
+        guard self.stockDataSource == dataSource, stockChartPeriod == period else { return }
+        stockChartStates[assetID] = state
+        if expandedAssetID == assetID, !isSearchOpen {
+            render()
+        }
     }
 
     func updateSearch(results: [AssetSearchResult], isSearching: Bool, message: String?) {
@@ -2625,7 +2814,8 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
     private var assetListHeight: CGFloat {
         let rows = assetListVisibleRowCount
-        return CGFloat(rows) * assetRowHeight + CGFloat(max(rows - 1, 0)) * listRowGap
+        let expandedHeight: CGFloat = expandedAssetID == nil ? 0 : stockChartHeight
+        return CGFloat(rows) * assetRowHeight + CGFloat(max(rows - 1, 0)) * listRowGap + expandedHeight
     }
 
     private var currentListHeight: CGFloat {
@@ -2824,9 +3014,10 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
     private func makeAssetList() -> NSView {
         let rowCount = max(assets.count, 1)
-        let documentHeight = CGFloat(rowCount) * assetRowHeight + CGFloat(max(rowCount - 1, 0)) * listRowGap
+        let expandedHeight: CGFloat = expandedAssetID == nil ? 0 : stockChartHeight
+        let documentHeight = CGFloat(rowCount) * assetRowHeight + CGFloat(max(rowCount - 1, 0)) * listRowGap + expandedHeight
         let visibleRows = max(1, min(assets.count, 8))
-        let listHeight = CGFloat(visibleRows) * assetRowHeight + CGFloat(max(visibleRows - 1, 0)) * listRowGap
+        let listHeight = CGFloat(visibleRows) * assetRowHeight + CGFloat(max(visibleRows - 1, 0)) * listRowGap + expandedHeight
 
         let scroll = NSScrollView()
         scroll.borderType = .noBorder
@@ -2838,7 +3029,6 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         scroll.heightAnchor.constraint(equalToConstant: listHeight).isActive = true
 
         let document = FlippedDocumentView(frame: NSRect(x: 0, y: 0, width: scrollWidth, height: documentHeight))
-        document.dropIndicatorGap = listRowGap
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = contentAlignment
@@ -2860,12 +3050,8 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
             stack.addArrangedSubview(label)
         } else {
             for asset in assets {
-                stack.addArrangedSubview(makeAssetRow(asset))
+                stack.addArrangedSubview(makeAssetItem(asset))
             }
-        }
-
-        document.configureGapDropDestination(stackView: stack, isEnabled: isEditingAssets) { [weak self] sourceID, targetID, placeAfterTarget in
-            self?.onMoveAsset?(sourceID, targetID, placeAfterTarget)
         }
 
         scroll.documentView = document
@@ -2874,15 +3060,38 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         return scroll
     }
 
+    private func makeAssetItem(_ asset: DisplayAsset) -> NSView {
+        let item = NSStackView()
+        item.orientation = .vertical
+        item.alignment = contentAlignment
+        item.spacing = 0
+        item.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        item.addArrangedSubview(makeAssetRow(asset))
+
+        if expandedAssetID == asset.id {
+            item.addArrangedSubview(makeStockChartArea(asset))
+        }
+        return item
+    }
+
     private func makeAssetRow(_ asset: DisplayAsset) -> NSView {
+        if !isEditingAssets {
+            return makeNormalAssetRow(asset)
+        }
+
         let row = AssetReorderRowView(assetID: asset.id)
         row.allowsReordering = isEditingAssets
         row.onMoveAsset = { [weak self] sourceID, targetID, placeAfterTarget in
             self?.onMoveAsset?(sourceID, targetID, placeAfterTarget)
         }
+        if !isEditingAssets, asset.type == .stock, stockChartPeriod != .off {
+            row.onClick = { [weak self] in
+                self?.toggleStockChart(assetID: asset.id)
+            }
+        }
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = isEditingAssets ? 4.5 : 8
+        row.spacing = 8
         row.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
         row.heightAnchor.constraint(equalToConstant: assetRowHeight).isActive = true
 
@@ -2963,6 +3172,139 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         handle.widthAnchor.constraint(equalToConstant: 12).isActive = true
         handle.heightAnchor.constraint(equalToConstant: 18).isActive = true
         return handle
+    }
+
+    private func makeNormalAssetRow(_ asset: DisplayAsset) -> NSView {
+        let row = AssetReorderRowView(assetID: asset.id)
+        row.allowsReordering = false
+        if asset.type == .stock, stockChartPeriod != .off {
+            row.onClick = { [weak self] in
+                self?.toggleStockChart(assetID: asset.id)
+            }
+        }
+        row.orientation = .vertical
+        row.alignment = contentAlignment
+        row.spacing = 2
+        row.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        row.heightAnchor.constraint(equalToConstant: assetRowHeight).isActive = true
+
+        let top = NSStackView()
+        top.orientation = .horizontal
+        top.alignment = .centerY
+        top.spacing = 6
+        top.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+
+        let name = makeLabel(displayName(for: asset), font: appFont(ofSize: 14, weight: .bold), color: .white, alignment: leadingTextAlignment)
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let warning = makeQuoteTimeWarning(asset)
+        warning.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        let price = makeLabel(asset.priceText, font: appFont(ofSize: 15, weight: .bold), color: valueColor(for: asset), alignment: .right)
+        price.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let priceTag = makeChangePercentTag(asset)
+        addArrangedSubviews([name, spacer, warning, price, priceTag], to: top)
+
+        let bottom = NSStackView()
+        bottom.orientation = .horizontal
+        bottom.alignment = .centerY
+        bottom.spacing = 6
+        bottom.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        let code = makeAssetCodeLine(asset)
+        code.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let bottomSpacer = NSView()
+        bottomSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        var bottomViews: [NSView] = [code, bottomSpacer]
+
+        if asset.errorMessage != nil {
+            bottomViews.append(makeAssetDetailLabel(asset, percentText: asset.errorMessage ?? "", dateText: nil, isError: true))
+        } else if asset.hasPosition {
+            let summary = makePositionSummaryLabel(asset)
+            summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            bottomViews.append(summary)
+            bottomViews.append(makePositionPercentTag(asset))
+        }
+        addArrangedSubviews(bottomViews, to: bottom)
+
+        row.addArrangedSubview(top)
+        row.addArrangedSubview(bottom)
+        return row
+    }
+
+    private func makeStockChartArea(_ asset: DisplayAsset) -> NSView {
+        let container = NSView()
+        container.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        container.heightAnchor.constraint(equalToConstant: stockChartHeight).isActive = true
+
+        let state = stockChartStates[asset.id] ?? (stockDataSource == .tencent ? .unavailable : .loading)
+        let chartContent = NSStackView()
+        chartContent.orientation = .vertical
+        chartContent.alignment = contentAlignment
+        chartContent.spacing = 2
+        chartContent.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(chartContent)
+        NSLayoutConstraint.activate([
+            chartContent.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            chartContent.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            chartContent.topAnchor.constraint(equalTo: container.topAnchor),
+            chartContent.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4)
+        ])
+
+        if let formula = makePositionFormulaLabel(asset) {
+            chartContent.addArrangedSubview(formula)
+        }
+
+        switch state {
+        case let .loaded(points):
+            let chart = StockChartView()
+            chart.points = points
+            chart.colorMode = colorMode
+            chart.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
+            chart.heightAnchor.constraint(greaterThanOrEqualToConstant: asset.hasPosition ? 78 : 96).isActive = true
+            chartContent.addArrangedSubview(chart)
+        case .loading:
+            addCenteredChartMessage(L10n.stockChartLoading, to: chartContent)
+        case .unavailable:
+            addCenteredChartMessage(L10n.stockChartNoData, to: chartContent)
+        case .failed:
+            addCenteredChartMessage(L10n.stockChartLoadFailed, to: chartContent)
+        }
+        return container
+    }
+
+    private func addCenteredChartMessage(_ text: String, to container: NSView) {
+        let label = makeLabel(
+            text,
+            font: appFont(ofSize: 11, weight: .medium),
+            color: NSColor.white.withAlphaComponent(0.50),
+            alignment: .center
+        )
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+    }
+
+    private func toggleStockChart(assetID: String) {
+        guard stockChartPeriod != .off,
+              assets.contains(where: { $0.id == assetID && $0.type == .stock }) else { return }
+        if expandedAssetID == assetID {
+            expandedAssetID = nil
+            render()
+            return
+        }
+
+        expandedAssetID = assetID
+        if stockDataSource == .tencent {
+            stockChartStates[assetID] = .unavailable
+        } else {
+            stockChartStates[assetID] = .loading
+            onRequestStockChart?(assetID)
+        }
+        render()
     }
 
     private func makeSearchHeader() -> NSView {
@@ -3233,6 +3575,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         menu.appearance = NSAppearance(named: .darkAqua)
         menu.addItem(makeParentMenuItem(title: L10n.colorSetting, submenu: makeColorModeMenu()))
         menu.addItem(makeParentMenuItem(title: L10n.statusBarBackgroundSetting, submenu: makeStatusBarBackgroundMenu()))
+        menu.addItem(makeParentMenuItem(title: L10n.stockChartSetting, submenu: makeStockChartPeriodMenu()))
         menu.addItem(makeParentMenuItem(title: L10n.stockDataSourceSetting, submenu: makeStockDataSourceMenu()))
         menu.addItem(makeParentMenuItem(title: L10n.languageSetting, submenu: makeLanguageMenu()))
         menu.addItem(.separator())
@@ -3294,6 +3637,19 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         return menu
     }
 
+    private func makeStockChartPeriodMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.appearance = NSAppearance(named: .darkAqua)
+        for period in StockChartPeriod.allCases {
+            let item = NSMenuItem(title: period.title, action: #selector(stockChartPeriodMenuItemClicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = period.rawValue
+            item.state = period == stockChartPeriod ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
     private func makeLanguageMenu() -> NSMenu {
         let menu = NSMenu()
         menu.appearance = NSAppearance(named: .darkAqua)
@@ -3338,6 +3694,9 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
     @objc private func toggleAssetEditingClicked(_ sender: NSButton) {
         isEditingAssets.toggle()
+        if isEditingAssets {
+            expandedAssetID = nil
+        }
         render()
     }
 
@@ -3369,8 +3728,14 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     @objc private func stockDataSourceMenuItemClicked(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let source = StockDataSource(rawValue: rawValue) else { return }
-        stockDataSource = source
         onStockDataSourceChange?(source)
+        render()
+    }
+
+    @objc private func stockChartPeriodMenuItemClicked(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let period = StockChartPeriod(rawValue: rawValue) else { return }
+        onStockChartPeriodChange?(period)
         render()
     }
 
@@ -3656,8 +4021,8 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
             valueGroup.addArrangedSubview(price)
             valueGroup.addArrangedSubview(change)
         } else {
-            valueGroup.addArrangedSubview(change)
             valueGroup.addArrangedSubview(price)
+            valueGroup.addArrangedSubview(change)
         }
 
         row.addSubview(warning)
@@ -3683,14 +4048,22 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     }
 
     private func makeChangePercentTag(_ asset: DisplayAsset) -> NSView {
+        makePercentTag(formatPercent(asset.changePercent), color: valueColor(for: asset))
+    }
+
+    private func makePositionPercentTag(_ asset: DisplayAsset) -> NSView {
+        makePercentTag(formatPercent(asset.positionProfitPercent), color: positionColor(for: asset))
+    }
+
+    private func makePercentTag(_ text: String, color: NSColor) -> NSView {
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.backgroundColor = valueColor(for: asset).withAlphaComponent(0.16).cgColor
+        container.layer?.backgroundColor = color.withAlphaComponent(0.16).cgColor
         container.layer?.cornerRadius = 3
         container.heightAnchor.constraint(equalToConstant: 15).isActive = true
 
-        let label = makeLabel(formatPercent(asset.changePercent), font: appFont(ofSize: 9, weight: .bold), color: valueColor(for: asset), alignment: .center)
-        container.widthAnchor.constraint(equalToConstant: max(38, ceil(label.intrinsicContentSize.width) + 8)).isActive = true
+        let label = makeLabel(text, font: appFont(ofSize: 9, weight: .bold), color: color, alignment: .center)
+        container.widthAnchor.constraint(equalToConstant: percentTagWidth).isActive = true
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
 
@@ -3806,6 +4179,53 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         return label
     }
 
+    private func makePositionSummaryLabel(_ asset: DisplayAsset) -> NSTextField {
+        let label = makeLabel(
+            positionSummaryText(for: asset),
+            font: appFont(ofSize: 11, weight: .medium),
+            color: positionColor(for: asset),
+            alignment: trailingTextAlignment
+        )
+        label.lineBreakMode = .byTruncatingHead
+        label.maximumNumberOfLines = 1
+        return label
+    }
+
+    private func positionSummaryText(for asset: DisplayAsset) -> String {
+        guard let amount = asset.positionProfitAmount,
+              let marketValue = asset.positionMarketValue,
+              let quantity = asset.holdingQuantity,
+              let currency = asset.currency else {
+            return "--"
+        }
+        let quantityText = formatNumber(quantity, minFraction: 0, maxFraction: 4)
+        let positionText = L10n.text(
+            "\(L10n.position) \(quantityText) 股",
+            "\(L10n.position) \(quantityText) shares",
+            zhHant: "\(L10n.position) \(quantityText) 股"
+        )
+        return "\(positionText) · \(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: true)) · \(L10n.profitLoss) \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: true))"
+    }
+
+    private func makePositionFormulaLabel(_ asset: DisplayAsset) -> NSTextField? {
+        guard let amount = asset.positionProfitAmount,
+              let marketValue = asset.positionMarketValue,
+              let cost = asset.positionCost,
+              let currency = asset.currency else {
+            return nil
+        }
+        let text = L10n.text(
+            "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))",
+            "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))",
+            zhHant: "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))"
+        )
+        let label = makeLabel(text, font: appFont(ofSize: 10, weight: .medium), color: NSColor.white.withAlphaComponent(0.62), alignment: trailingTextAlignment)
+        label.lineBreakMode = .byTruncatingHead
+        label.maximumNumberOfLines = 1
+        label.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
+        return label
+    }
+
     private func positionDetailText(for asset: DisplayAsset) -> String {
         guard let amount = asset.positionProfitAmount,
               let percent = asset.positionProfitPercent,
@@ -3857,6 +4277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
     private let panelViewController = AssetPanelViewController()
     private let service = AssetService()
+    private var previewWindow: NSWindow?
 
     private var config = ConfigStore.loadOrCreate()
     private var assets: [DisplayAsset] = []
@@ -3880,6 +4301,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         setupPopover()
         updateViews()
         refresh()
+
+        if ProcessInfo.processInfo.environment["CAREASSETS_PREVIEW"] == "1" {
+            showPreviewWindow()
+        }
 
         timer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
     }
@@ -3944,15 +4369,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         panelViewController.onStockDataSourceChange = { [weak self] source in
             self?.setStockDataSource(source)
         }
+        panelViewController.onStockChartPeriodChange = { [weak self] period in
+            self?.setStockChartPeriod(period)
+        }
+        panelViewController.onRequestStockChart = { [weak self] assetID in
+            self?.requestStockChart(assetID: assetID)
+        }
         panelViewController.onLanguageChange = { [weak self] language in
             self?.setLanguage(language)
         }
         panelViewController.onPreferredContentSizeChange = { [weak self] size in
             self?.popover.contentSize = size
+            self?.previewWindow?.setContentSize(size)
         }
         panelViewController.onQuit = {
             NSApp.terminate(nil)
         }
+    }
+
+    private func showPreviewWindow() {
+        _ = panelViewController.view
+        let contentSize = panelViewController.preferredContentSize
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "CareAssets Preview"
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = panelViewController
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        previewWindow = window
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func popoverDidClose(_ notification: Notification) {
@@ -3976,6 +4427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 colorMode: config.priceColorMode,
                 statusBarBackgroundMode: config.statusBarBackgroundMode,
                 stockDataSource: config.stockDataSource,
+                stockChartPeriod: config.stockChartPeriod,
                 language: config.language
             )
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -4114,6 +4566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             colorMode: config.priceColorMode,
             statusBarBackgroundMode: config.statusBarBackgroundMode,
             stockDataSource: config.stockDataSource,
+            stockChartPeriod: config.stockChartPeriod,
             language: config.language
         )
     }
@@ -4321,6 +4774,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refresh()
     }
 
+    private func setStockChartPeriod(_ period: StockChartPeriod) {
+        config.stockChartPeriod = period
+        ConfigStore.write(config)
+        updateViews()
+    }
+
+    private func requestStockChart(assetID: String) {
+        guard config.stockChartPeriod != .off,
+              config.stockDataSource != .tencent,
+              let asset = config.assets.first(where: { key(for: $0) == assetID && $0.type == .stock }) else {
+            return
+        }
+
+        let source = config.stockDataSource
+        let period = config.stockChartPeriod
+        Task {
+            do {
+                let points = try await service.fetchStockChart(asset, dataSource: source, period: period)
+                await MainActor.run {
+                    self.panelViewController.updateStockChart(
+                        assetID: assetID,
+                        dataSource: source,
+                        period: period,
+                        state: .loaded(points)
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self.panelViewController.updateStockChart(
+                        assetID: assetID,
+                        dataSource: source,
+                        period: period,
+                        state: .failed
+                    )
+                }
+            }
+        }
+    }
+
     private func setLanguage(_ language: AppLanguage) {
         config.language = language
         L10n.appLanguage = language
@@ -4490,6 +4982,22 @@ private func stockCurrency(for asset: TrackedAsset) -> String {
         return "KRW"
     }
     return "CNY"
+}
+
+private func eastMoneyDateString(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    formatter.dateFormat = "yyyyMMdd"
+    return formatter.string(from: date)
+}
+
+private func parseChartDate(_ string: String) -> Date? {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    formatter.dateFormat = string.contains(":") ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd"
+    return formatter.date(from: string)
 }
 
 private func cryptoBaseSymbol(from symbol: String) -> String {

@@ -50,6 +50,20 @@ open build/CareAssets.app
 
 构建脚本会生成 `arm64 + x86_64` 通用架构 App，并使用本地 ad-hoc 签名。
 
+## 开发预览窗口
+
+开发时可以把状态栏面板直接作为普通 `NSWindow` 打开，方便检查布局和交互：
+
+```bash
+./script/build_and_run.sh preview
+```
+
+窗口使用正式的 `AssetPanelViewController`，标题为 `CareAssets Preview`。它读取当前本机配置并使用真实行情接口；预览窗口里的设置操作也会写入本机配置。关闭窗口不会退出状态栏应用，结束预览时可以执行：
+
+```bash
+pkill -x CareAssets
+```
+
 手动安装到应用程序目录：
 
 ```bash
@@ -137,6 +151,16 @@ open build/CareAssets.app
 ```
 
 The build script creates a universal `arm64 + x86_64` app bundle and ad-hoc signs it locally.
+
+### Development preview window
+
+To open the production asset panel in a regular `NSWindow` while developing:
+
+```bash
+./script/build_and_run.sh preview
+```
+
+The preview window is titled `CareAssets Preview`, uses the same `AssetPanelViewController` as the menu bar app, reads the current local configuration, and calls the real quote endpoints. Settings changed in the preview are written to the local configuration. Closing the window does not quit the menu bar app; run `pkill -x CareAssets` when you are done.
 
 To install it manually:
 
