@@ -3262,6 +3262,11 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         let container = NSView()
         container.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
         container.heightAnchor.constraint(equalToConstant: stockChartHeight).isActive = true
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.025).cgColor
+        container.layer?.cornerRadius = 8
+        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.035).cgColor
+        container.layer?.borderWidth = 1
 
         let state = stockChartStates[asset.id] ?? (stockDataSource == .tencent ? .unavailable : .loading)
         let chartContent = NSStackView()
@@ -3279,6 +3284,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
         if let formula = makePositionFormulaLabel(asset) {
             chartContent.addArrangedSubview(formula)
+            chartContent.setCustomSpacing(8, after: formula)
         }
 
         switch state {
