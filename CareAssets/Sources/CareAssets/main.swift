@@ -2719,8 +2719,9 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private var contentWidth: CGFloat { panelWidth - 36 }
     private var scrollWidth: CGFloat { isRTL ? contentWidth : contentWidth + horizontalInset }
     private let assetRowHeight: CGFloat = 52
-    private let stockChartHeight: CGFloat = 104
-    private let positionChartExtraHeight: CGFloat = 22
+    private let stockChartHeight: CGFloat = 116
+    private let positionFormulaPanelHeight: CGFloat = 22
+    private let expandedPanelGap: CGFloat = 4
     private let searchResultRowHeight: CGFloat = 52
     private let searchGroupHeaderHeight: CGFloat = 30
     private let searchGroupGap: CGFloat = 16
@@ -2871,7 +2872,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     }
 
     private func stockChartHeight(for asset: DisplayAsset) -> CGFloat {
-        stockChartHeight + (asset.hasPosition ? positionChartExtraHeight : 0)
+        stockChartHeight + (asset.hasPosition ? positionFormulaPanelHeight + expandedPanelGap : 0)
     }
 
     private var currentListHeight: CGFloat {
@@ -3289,33 +3290,41 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     }
 
     private func makeStockChartArea(_ asset: DisplayAsset) -> NSView {
-        let container = NSView()
-        container.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
-        container.heightAnchor.constraint(equalToConstant: stockChartHeight(for: asset)).isActive = true
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.025).cgColor
-        container.layer?.cornerRadius = 8
-        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.035).cgColor
-        container.layer?.borderWidth = 1
+        let panels = NSStackView()
+        panels.orientation = .vertical
+        panels.alignment = contentAlignment
+        panels.spacing = expandedPanelGap
+        panels.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        panels.heightAnchor.constraint(equalToConstant: stockChartHeight(for: asset)).isActive = true
+
+        if let formula = makePositionFormulaLabel(asset) {
+            let formulaPanel = makeExpandedPanel(height: positionFormulaPanelHeight)
+            formula.translatesAutoresizingMaskIntoConstraints = false
+            formulaPanel.addSubview(formula)
+            NSLayoutConstraint.activate([
+                formula.leadingAnchor.constraint(equalTo: formulaPanel.leadingAnchor, constant: 8),
+                formula.trailingAnchor.constraint(equalTo: formulaPanel.trailingAnchor, constant: -8),
+                formula.centerYAnchor.constraint(equalTo: formulaPanel.centerYAnchor)
+            ])
+            panels.addArrangedSubview(formulaPanel)
+        }
+
+        let chartPanel = makeExpandedPanel(height: stockChartHeight)
+        panels.addArrangedSubview(chartPanel)
 
         let state = stockChartStates[asset.id] ?? (stockDataSource == .tencent ? .unavailable : .loading)
         let chartContent = NSStackView()
         chartContent.orientation = .vertical
         chartContent.alignment = contentAlignment
-        chartContent.spacing = 2
+        chartContent.spacing = 3
         chartContent.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(chartContent)
+        chartPanel.addSubview(chartContent)
         NSLayoutConstraint.activate([
-            chartContent.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            chartContent.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
-            chartContent.topAnchor.constraint(equalTo: container.topAnchor),
-            chartContent.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4)
+            chartContent.leadingAnchor.constraint(equalTo: chartPanel.leadingAnchor, constant: 8),
+            chartContent.trailingAnchor.constraint(equalTo: chartPanel.trailingAnchor, constant: -8),
+            chartContent.topAnchor.constraint(equalTo: chartPanel.topAnchor, constant: 6),
+            chartContent.bottomAnchor.constraint(equalTo: chartPanel.bottomAnchor, constant: -8)
         ])
-
-        if let formula = makePositionFormulaLabel(asset) {
-            chartContent.addArrangedSubview(formula)
-            chartContent.setCustomSpacing(8, after: formula)
-        }
 
         switch state {
         case let .loaded(points):
@@ -3349,7 +3358,19 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         case .failed:
             addCenteredChartMessage(L10n.stockChartLoadFailed, to: chartContent)
         }
-        return container
+        return panels
+    }
+
+    private func makeExpandedPanel(height: CGFloat) -> NSView {
+        let panel = NSView()
+        panel.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        panel.heightAnchor.constraint(equalToConstant: height).isActive = true
+        panel.wantsLayer = true
+        panel.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.025).cgColor
+        panel.layer?.cornerRadius = 8
+        panel.layer?.borderColor = NSColor.white.withAlphaComponent(0.035).cgColor
+        panel.layer?.borderWidth = 1
+        return panel
     }
 
     private func chartChangePercent(_ points: [StockChartPoint]) -> Double? {
