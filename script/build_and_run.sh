@@ -16,7 +16,9 @@ stop_app() {
 }
 
 build_app() {
-  "$BUILD_SCRIPT"
+  local module_cache="${TMPDIR:-/private/tmp}/careassets-module-cache"
+  mkdir -p "$module_cache"
+  SWIFT_MODULECACHE_PATH="$module_cache" CLANG_MODULE_CACHE_PATH="$module_cache" "$BUILD_SCRIPT"
 }
 
 open_app() {
@@ -44,7 +46,7 @@ case "$MODE" in
   --preview|preview)
     stop_app
     build_app
-    /usr/bin/open -n --env CAREASSETS_PREVIEW=1 "$APP_BUNDLE"
+    /usr/bin/open -n "$APP_BUNDLE" --args --preview
     ;;
   --debug|debug)
     stop_app

@@ -175,6 +175,9 @@ enum L10n {
     static var unrealizedProfit: String { text("浮盈", "Unrealized gain", zhHant: "浮盈", ja: "含み益", ar: "ربح غير محقق", de: "Buchgewinn", fr: "Gain latent", ko: "평가이익", ptPT: "Ganho não realizado", es: "Ganancia no realizada") }
     static var unrealizedLoss: String { text("浮亏", "Unrealized loss", zhHant: "浮虧", ja: "含み損", ar: "خسارة غير محققة", de: "Buchverlust", fr: "Perte latente", ko: "평가손실", ptPT: "Perda não realizada", es: "Pérdida no realizada") }
     static var profitLoss: String { text("盈亏", "P/L", zhHant: "盈虧", ja: "損益", ar: "الربح/الخسارة", de: "G/V", fr: "P/L", ko: "손익", ptPT: "G/P", es: "G/P") }
+    static var buyIn: String { text("买入", "Bought", zhHant: "買入", ja: "買付", ar: "الشراء", de: "Kauf", fr: "Achat", ko: "매수", ptPT: "Compra", es: "Compra") }
+    static var totalPositionProfitLoss: String { text("总持仓盈亏", "Total position P/L", zhHant: "總持倉盈虧", ja: "保有損益合計", ar: "إجمالي ربح/خسارة المراكز", de: "Gesamt-G/V", fr: "P/L total", ko: "총 보유 손익", ptPT: "G/P total", es: "G/P total") }
+    static var showPositionSummary: String { text("显示持仓汇总", "Show position summary", zhHant: "顯示持倉彙總", ja: "保有サマリーを表示", ar: "إظهار ملخص المراكز", de: "Positionsübersicht anzeigen", fr: "Afficher le résumé", ko: "보유 요약 표시", ptPT: "Mostrar resumo", es: "Mostrar resumen") }
     static var cost: String { text("成本", "Cost", zhHant: "成本", ja: "取得額", ar: "التكلفة", de: "Kosten", fr: "Coût", ko: "원가", ptPT: "Custo", es: "Coste") }
     static var marketValue: String { text("市值", "Value", zhHant: "市值", ja: "評価額", ar: "القيمة", de: "Wert", fr: "Valeur", ko: "평가액", ptPT: "Valor", es: "Valor") }
     static var colorSetting: String { text("价格颜色", "Price color", zhHant: "價格顏色", ja: "価格色", ar: "لون السعر", de: "Preisfarbe", fr: "Couleur prix", ko: "가격 색상", ptPT: "Cor preço", es: "Color precio") }
@@ -429,6 +432,7 @@ struct AppConfig: Codable, Sendable {
     var statusBarBackgroundMode: StatusBarBackgroundMode
     var stockDataSource: StockDataSource
     var stockChartPeriod: StockChartPeriod
+    var showPositionSummary: Bool
     var language: AppLanguage
     var assets: [TrackedAsset]
 
@@ -440,6 +444,7 @@ struct AppConfig: Codable, Sendable {
         statusBarBackgroundMode: .dark,
         stockDataSource: .tencent,
         stockChartPeriod: .day,
+        showPositionSummary: true,
         language: .system,
         assets: [
             TrackedAsset(type: .gold, name: L10n.gold, symbol: "JD_GOLD", canonicalSymbol: "GOLD:JD_GOLD", holdingQuantity: nil, averageBuyPrice: nil, visibleInMenuBar: true),
@@ -456,6 +461,7 @@ struct AppConfig: Codable, Sendable {
         statusBarBackgroundMode: StatusBarBackgroundMode = .dark,
         stockDataSource: StockDataSource = .tencent,
         stockChartPeriod: StockChartPeriod = .day,
+        showPositionSummary: Bool = true,
         language: AppLanguage = .system,
         assets: [TrackedAsset]
     ) {
@@ -466,6 +472,7 @@ struct AppConfig: Codable, Sendable {
         self.statusBarBackgroundMode = statusBarBackgroundMode
         self.stockDataSource = stockDataSource
         self.stockChartPeriod = stockChartPeriod
+        self.showPositionSummary = showPositionSummary
         self.language = language
         self.assets = assets
     }
@@ -478,6 +485,7 @@ struct AppConfig: Codable, Sendable {
         case statusBarBackgroundMode
         case stockDataSource
         case stockChartPeriod
+        case showPositionSummary
         case language
         case assets
     }
@@ -491,6 +499,7 @@ struct AppConfig: Codable, Sendable {
         statusBarBackgroundMode = try container.decodeIfPresent(StatusBarBackgroundMode.self, forKey: .statusBarBackgroundMode) ?? .dark
         stockDataSource = try container.decodeIfPresent(StockDataSource.self, forKey: .stockDataSource) ?? .tencent
         stockChartPeriod = try container.decodeIfPresent(StockChartPeriod.self, forKey: .stockChartPeriod) ?? .day
+        showPositionSummary = try container.decodeIfPresent(Bool.self, forKey: .showPositionSummary) ?? true
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         assets = try container.decode([TrackedAsset].self, forKey: .assets)
     }
@@ -2673,6 +2682,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     var onStatusBarBackgroundModeChange: ((StatusBarBackgroundMode) -> Void)?
     var onStockDataSourceChange: ((StockDataSource) -> Void)?
     var onStockChartPeriodChange: ((StockChartPeriod) -> Void)?
+    var onShowPositionSummaryChange: ((Bool) -> Void)?
     var onRequestStockChart: ((String) -> Void)?
     var onLanguageChange: ((AppLanguage) -> Void)?
     var onPreferredContentSizeChange: ((NSSize) -> Void)?
@@ -2685,6 +2695,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private var statusBarBackgroundMode: StatusBarBackgroundMode = .dark
     private var stockDataSource: StockDataSource = .tencent
     private var stockChartPeriod: StockChartPeriod = .day
+    private var showPositionSummary = true
     private var expandedAssetID: String?
     private var stockChartStates: [String: StockChartState] = [:]
     private var language: AppLanguage = .system
@@ -2743,7 +2754,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         render()
     }
 
-    func update(assets: [DisplayAsset], countdown: Int, isRefreshing: Bool, colorMode: PriceColorMode, statusBarBackgroundMode: StatusBarBackgroundMode, stockDataSource: StockDataSource, stockChartPeriod: StockChartPeriod, language: AppLanguage) {
+    func update(assets: [DisplayAsset], countdown: Int, isRefreshing: Bool, colorMode: PriceColorMode, statusBarBackgroundMode: StatusBarBackgroundMode, stockDataSource: StockDataSource, stockChartPeriod: StockChartPeriod, showPositionSummary: Bool, language: AppLanguage) {
         let chartContextChanged = self.stockDataSource != stockDataSource || self.stockChartPeriod != stockChartPeriod
         self.assets = assets
         self.countdown = countdown
@@ -2752,6 +2763,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         self.statusBarBackgroundMode = statusBarBackgroundMode
         self.stockDataSource = stockDataSource
         self.stockChartPeriod = stockChartPeriod
+        self.showPositionSummary = showPositionSummary
         self.language = language
         if let expandedAssetID,
            !assets.contains(where: { $0.id == expandedAssetID && $0.type == .stock }) {
@@ -2829,6 +2841,10 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
         let listView = isSearchOpen ? makeSearchList() : makeAssetList()
         root.addArrangedSubview(listView)
+        if showPositionSummary {
+            root.setCustomSpacing(footerExtraTopSpacing, after: listView)
+            root.addArrangedSubview(makePositionSummaryBar())
+        }
 
         if shouldFocusSearchField {
             shouldFocusSearchField = false
@@ -2869,7 +2885,8 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     }
 
     private var preferredPanelHeight: CGFloat {
-        return topInset + headerHeight + stackSpacing + currentListHeight + bottomInset
+        let summaryHeight = showPositionSummary ? footerExtraTopSpacing + footerHeight : 0
+        return topInset + headerHeight + stackSpacing + currentListHeight + summaryHeight + bottomInset
     }
 
     private var searchResultRowCount: Int {
@@ -3673,6 +3690,12 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         menu.addItem(makeParentMenuItem(title: L10n.languageSetting, submenu: makeLanguageMenu()))
         menu.addItem(.separator())
 
+        let positionSummary = NSMenuItem(title: L10n.showPositionSummary, action: #selector(showPositionSummaryMenuItemClicked(_:)), keyEquivalent: "")
+        positionSummary.target = self
+        positionSummary.state = showPositionSummary ? .on : .off
+        menu.addItem(positionSummary)
+        menu.addItem(.separator())
+
         let launchAtLogin = NSMenuItem(title: L10n.launchAtLogin, action: #selector(launchAtLoginMenuItemClicked(_:)), keyEquivalent: "")
         launchAtLogin.target = self
         launchAtLogin.state = LoginLaunchAgent.isEnabled ? .on : .off
@@ -3775,6 +3798,74 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         return row
     }
 
+    private func makePositionSummaryBar() -> NSView {
+        struct Totals {
+            var profit: Double = 0
+            var cost: Double = 0
+        }
+
+        var totalsByCurrency: [String: Totals] = [:]
+        for asset in assets {
+            guard let currency = asset.currency?.uppercased(),
+                  let profit = asset.positionProfitAmount,
+                  let cost = asset.positionCost else { continue }
+            totalsByCurrency[currency, default: Totals()].profit += profit
+            totalsByCurrency[currency, default: Totals()].cost += cost
+        }
+
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.025).cgColor
+        container.layer?.cornerRadius = 8
+        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.035).cgColor
+        container.layer?.borderWidth = 1
+        container.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        container.heightAnchor.constraint(equalToConstant: footerHeight).isActive = true
+
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 7
+        row.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            row.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            row.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        let title = makeLabel(L10n.totalPositionProfitLoss, font: appFont(ofSize: 11, weight: .semibold), color: NSColor.white.withAlphaComponent(0.70), alignment: leadingTextAlignment)
+        title.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        var views: [NSView] = [title, spacer]
+
+        let currencies = totalsByCurrency.keys.sorted()
+        if currencies.isEmpty {
+            views.append(makeMutedLabel("--", alignment: trailingTextAlignment))
+        } else {
+            for currency in currencies {
+                guard let totals = totalsByCurrency[currency] else { continue }
+                let value = makeLabel(
+                    formatSignedCurrencyWithCode(totals.profit, currencyCode: currency, compact: true),
+                    font: appFont(ofSize: 11, weight: .semibold),
+                    color: priceColor(for: totals.profit, mode: colorMode, whiteAlpha: 1),
+                    alignment: trailingTextAlignment
+                )
+                value.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+                views.append(value)
+            }
+            if currencies.count == 1,
+               let totals = currencies.first.flatMap({ totalsByCurrency[$0] }),
+               totals.cost > 0 {
+                let percent = totals.profit / totals.cost * 100
+                views.append(makePercentTag(formatPercent(percent), color: chartColor(for: percent)))
+            }
+        }
+        addArrangedSubviews(views, to: row)
+        return container
+    }
+
     @objc private func toggleSearchClicked(_ sender: NSButton) {
         openSearchMode()
         render()
@@ -3829,6 +3920,12 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         guard let rawValue = sender.representedObject as? String,
               let period = StockChartPeriod(rawValue: rawValue) else { return }
         onStockChartPeriodChange?(period)
+        render()
+    }
+
+    @objc private func showPositionSummaryMenuItemClicked(_ sender: NSMenuItem) {
+        showPositionSummary.toggle()
+        onShowPositionSummaryChange?(showPositionSummary)
         render()
     }
 
@@ -4285,8 +4382,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     }
 
     private func positionSummaryText(for asset: DisplayAsset) -> String {
-        guard let amount = asset.positionProfitAmount,
-              let marketValue = asset.positionMarketValue,
+        guard let averageBuyPrice = asset.averageBuyPrice,
               let quantity = asset.holdingQuantity,
               let currency = asset.currency else {
             return "--"
@@ -4297,7 +4393,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
             "\(L10n.position) \(quantityText) shares",
             zhHant: "\(L10n.position) \(quantityText) 股"
         )
-        return "\(positionText) · \(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: true)) · \(L10n.profitLoss) \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: true))"
+        return "\(positionText) · \(L10n.buyIn) \(formatCurrencyWithCode(averageBuyPrice, currencyCode: currency, compact: false))"
     }
 
     private func makePositionFormulaLabel(_ asset: DisplayAsset) -> NSTextField? {
@@ -4308,9 +4404,9 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
             return nil
         }
         let text = L10n.text(
-            "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))",
-            "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))",
-            zhHant: "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))"
+            "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(L10n.profitLoss) \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))",
+            "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(L10n.profitLoss) \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))",
+            zhHant: "\(L10n.marketValue) \(formatCurrencyWithCode(marketValue, currencyCode: currency, compact: false)) − \(L10n.cost) \(formatCurrencyWithCode(cost, currencyCode: currency, compact: false)) = \(L10n.profitLoss) \(formatSignedCurrencyWithCode(amount, currencyCode: currency, compact: false))"
         )
         let label = makeLabel(text, font: appFont(ofSize: 10, weight: .medium), color: NSColor.white.withAlphaComponent(0.62), alignment: trailingTextAlignment)
         label.lineBreakMode = .byTruncatingHead
@@ -4395,7 +4491,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         updateViews()
         refresh()
 
-        if ProcessInfo.processInfo.environment["CAREASSETS_PREVIEW"] == "1" {
+        if ProcessInfo.processInfo.environment["CAREASSETS_PREVIEW"] == "1"
+            || ProcessInfo.processInfo.arguments.contains("--preview") {
             showPreviewWindow()
         }
 
@@ -4465,6 +4562,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         panelViewController.onStockChartPeriodChange = { [weak self] period in
             self?.setStockChartPeriod(period)
         }
+        panelViewController.onShowPositionSummaryChange = { [weak self] visible in
+            self?.setShowPositionSummary(visible)
+        }
         panelViewController.onRequestStockChart = { [weak self] assetID in
             self?.requestStockChart(assetID: assetID)
         }
@@ -4521,6 +4621,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 statusBarBackgroundMode: config.statusBarBackgroundMode,
                 stockDataSource: config.stockDataSource,
                 stockChartPeriod: config.stockChartPeriod,
+                showPositionSummary: config.showPositionSummary,
                 language: config.language
             )
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -4660,6 +4761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             statusBarBackgroundMode: config.statusBarBackgroundMode,
             stockDataSource: config.stockDataSource,
             stockChartPeriod: config.stockChartPeriod,
+            showPositionSummary: config.showPositionSummary,
             language: config.language
         )
     }
@@ -4869,6 +4971,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func setStockChartPeriod(_ period: StockChartPeriod) {
         config.stockChartPeriod = period
+        ConfigStore.write(config)
+        updateViews()
+    }
+
+    private func setShowPositionSummary(_ visible: Bool) {
+        config.showPositionSummary = visible
         ConfigStore.write(config)
         updateViews()
     }
