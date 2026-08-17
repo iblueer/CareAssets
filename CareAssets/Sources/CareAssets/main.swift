@@ -178,6 +178,16 @@ enum L10n {
     static var buyIn: String { text("买入", "Bought", zhHant: "買入", ja: "買付", ar: "الشراء", de: "Kauf", fr: "Achat", ko: "매수", ptPT: "Compra", es: "Compra") }
     static var totalPositionProfitLoss: String { text("总持仓盈亏", "Total position P/L", zhHant: "總持倉盈虧", ja: "保有損益合計", ar: "إجمالي ربح/خسارة المراكز", de: "Gesamt-G/V", fr: "P/L total", ko: "총 보유 손익", ptPT: "G/P total", es: "G/P total") }
     static var showPositionSummary: String { text("显示持仓汇总", "Show position summary", zhHant: "顯示持倉彙總", ja: "保有サマリーを表示", ar: "إظهار ملخص المراكز", de: "Positionsübersicht anzeigen", fr: "Afficher le résumé", ko: "보유 요약 표시", ptPT: "Mostrar resumo", es: "Mostrar resumen") }
+    static var iCloudDriveAssetSync: String { text("iCloud Drive 同步", "Sync with iCloud Drive", zhHant: "iCloud Drive 同步") }
+    static var chooseICloudDriveFolder: String { text("选择 iCloud Drive 文件夹", "Choose an iCloud Drive folder", zhHant: "選擇 iCloud Drive 資料夾") }
+    static var chooseICloudDriveFolderDetail: String { text("CareAssets 会在所选文件夹中保存关注列表和持仓同步文件。", "CareAssets will save its watchlist and position sync file in the selected folder.", zhHant: "CareAssets 會在所選資料夾中儲存關注列表和持倉同步檔案。") }
+    static var positionSyncDirectionTitle: String { text("选择首次同步方向", "Choose the initial sync direction", zhHant: "選擇首次同步方向") }
+    static var assetSyncDirectionDetail: String { text("请选择哪一份数据覆盖另一份。此操作会替换目标端的关注列表、排序、菜单栏显示状态和持仓数据。", "Choose which data replaces the other. This replaces the target's watchlist, order, menu bar visibility, and positions.", zhHant: "請選擇哪一份資料覆蓋另一份。此操作會取代目標端的關注列表、排序、選單列顯示狀態和持倉資料。") }
+    static var localOverwritesICloud: String { text("本机覆盖 iCloud", "This Mac → iCloud", zhHant: "本機覆蓋 iCloud") }
+    static var iCloudOverwritesLocal: String { text("iCloud 覆盖本机", "iCloud → This Mac", zhHant: "iCloud 覆蓋本機") }
+    static var assetSyncNoCloudData: String { text("所选文件夹中没有 CareAssets 同步文件。", "No CareAssets sync file exists in the selected folder.", zhHant: "所選資料夾中沒有 CareAssets 同步檔案。") }
+    static var assetSyncReadFailed: String { text("无法读取 iCloud Drive 同步数据。", "Unable to read sync data from iCloud Drive.", zhHant: "無法讀取 iCloud Drive 同步資料。") }
+    static var assetSyncWriteFailed: String { text("无法写入 iCloud Drive 同步数据。", "Unable to write sync data to iCloud Drive.", zhHant: "無法寫入 iCloud Drive 同步資料。") }
     static var cost: String { text("成本", "Cost", zhHant: "成本", ja: "取得額", ar: "التكلفة", de: "Kosten", fr: "Coût", ko: "원가", ptPT: "Custo", es: "Coste") }
     static var marketValue: String { text("市值", "Value", zhHant: "市值", ja: "評価額", ar: "القيمة", de: "Wert", fr: "Valeur", ko: "평가액", ptPT: "Valor", es: "Valor") }
     static var colorSetting: String { text("价格颜色", "Price color", zhHant: "價格顏色", ja: "価格色", ar: "لون السعر", de: "Preisfarbe", fr: "Couleur prix", ko: "가격 색상", ptPT: "Cor preço", es: "Color precio") }
@@ -433,6 +443,8 @@ struct AppConfig: Codable, Sendable {
     var stockDataSource: StockDataSource
     var stockChartPeriod: StockChartPeriod
     var showPositionSummary: Bool
+    var iCloudDriveSyncEnabled: Bool
+    var syncFolderPath: String?
     var language: AppLanguage
     var assets: [TrackedAsset]
 
@@ -445,6 +457,8 @@ struct AppConfig: Codable, Sendable {
         stockDataSource: .tencent,
         stockChartPeriod: .day,
         showPositionSummary: true,
+        iCloudDriveSyncEnabled: false,
+        syncFolderPath: nil,
         language: .system,
         assets: [
             TrackedAsset(type: .gold, name: L10n.gold, symbol: "JD_GOLD", canonicalSymbol: "GOLD:JD_GOLD", holdingQuantity: nil, averageBuyPrice: nil, visibleInMenuBar: true),
@@ -462,6 +476,8 @@ struct AppConfig: Codable, Sendable {
         stockDataSource: StockDataSource = .tencent,
         stockChartPeriod: StockChartPeriod = .day,
         showPositionSummary: Bool = true,
+        iCloudDriveSyncEnabled: Bool = false,
+        syncFolderPath: String? = nil,
         language: AppLanguage = .system,
         assets: [TrackedAsset]
     ) {
@@ -473,6 +489,8 @@ struct AppConfig: Codable, Sendable {
         self.stockDataSource = stockDataSource
         self.stockChartPeriod = stockChartPeriod
         self.showPositionSummary = showPositionSummary
+        self.iCloudDriveSyncEnabled = iCloudDriveSyncEnabled
+        self.syncFolderPath = syncFolderPath
         self.language = language
         self.assets = assets
     }
@@ -486,6 +504,8 @@ struct AppConfig: Codable, Sendable {
         case stockDataSource
         case stockChartPeriod
         case showPositionSummary
+        case iCloudDriveSyncEnabled
+        case syncFolderPath
         case language
         case assets
     }
@@ -500,6 +520,8 @@ struct AppConfig: Codable, Sendable {
         stockDataSource = try container.decodeIfPresent(StockDataSource.self, forKey: .stockDataSource) ?? .tencent
         stockChartPeriod = try container.decodeIfPresent(StockChartPeriod.self, forKey: .stockChartPeriod) ?? .day
         showPositionSummary = try container.decodeIfPresent(Bool.self, forKey: .showPositionSummary) ?? true
+        iCloudDriveSyncEnabled = try container.decodeIfPresent(Bool.self, forKey: .iCloudDriveSyncEnabled) ?? false
+        syncFolderPath = try container.decodeIfPresent(String.self, forKey: .syncFolderPath)
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         assets = try container.decode([TrackedAsset].self, forKey: .assets)
     }
@@ -708,6 +730,45 @@ final class ConfigStore {
         } catch {
             NSLog("CareAssets config write failed: \(error.localizedDescription)")
         }
+    }
+}
+
+private struct AssetSyncSnapshot: Codable {
+    var schemaVersion: Int
+    var modifiedAt: Date
+    var assets: [TrackedAsset]
+}
+
+private enum AssetSyncFileStore {
+    static let fileName = "CareAssets-sync.json"
+
+    static func fileURL(in folderURL: URL) -> URL {
+        folderURL.appendingPathComponent(fileName, isDirectory: false)
+    }
+
+    static func read(from folderURL: URL) throws -> (snapshot: AssetSyncSnapshot, data: Data)? {
+        let url = fileURL(in: folderURL)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(AssetSyncSnapshot.self, from: data)
+        guard snapshot.schemaVersion == 1 else {
+            throw NSError(domain: "CareAssets.AssetSync", code: 1)
+        }
+        return (snapshot, data)
+    }
+
+    @discardableResult
+    static func write(assets: [TrackedAsset], to folderURL: URL) throws -> Data {
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let snapshot = AssetSyncSnapshot(schemaVersion: 1, modifiedAt: Date(), assets: assets)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(snapshot)
+        try data.write(to: fileURL(in: folderURL), options: .atomic)
+        return data
     }
 }
 
@@ -2683,6 +2744,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     var onStockDataSourceChange: ((StockDataSource) -> Void)?
     var onStockChartPeriodChange: ((StockChartPeriod) -> Void)?
     var onShowPositionSummaryChange: ((Bool) -> Void)?
+    var onICloudDriveSyncChange: ((Bool) -> Void)?
     var onRequestStockChart: ((String) -> Void)?
     var onLanguageChange: ((AppLanguage) -> Void)?
     var onPreferredContentSizeChange: ((NSSize) -> Void)?
@@ -2696,6 +2758,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private var stockDataSource: StockDataSource = .tencent
     private var stockChartPeriod: StockChartPeriod = .day
     private var showPositionSummary = true
+    private var iCloudDriveSyncEnabled = false
     private var expandedAssetID: String?
     private var stockChartStates: [String: StockChartState] = [:]
     private var language: AppLanguage = .system
@@ -2755,7 +2818,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         render()
     }
 
-    func update(assets: [DisplayAsset], countdown: Int, isRefreshing: Bool, colorMode: PriceColorMode, statusBarBackgroundMode: StatusBarBackgroundMode, stockDataSource: StockDataSource, stockChartPeriod: StockChartPeriod, showPositionSummary: Bool, language: AppLanguage) {
+    func update(assets: [DisplayAsset], countdown: Int, isRefreshing: Bool, colorMode: PriceColorMode, statusBarBackgroundMode: StatusBarBackgroundMode, stockDataSource: StockDataSource, stockChartPeriod: StockChartPeriod, showPositionSummary: Bool, iCloudDriveSyncEnabled: Bool, language: AppLanguage) {
         let chartContextChanged = self.stockDataSource != stockDataSource || self.stockChartPeriod != stockChartPeriod
         self.assets = assets
         self.countdown = countdown
@@ -2765,6 +2828,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         self.stockDataSource = stockDataSource
         self.stockChartPeriod = stockChartPeriod
         self.showPositionSummary = showPositionSummary
+        self.iCloudDriveSyncEnabled = iCloudDriveSyncEnabled
         self.language = language
         if let expandedAssetID,
            !assets.contains(where: { $0.id == expandedAssetID && $0.type == .stock }) {
@@ -3717,6 +3781,12 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         menu.addItem(positionSummary)
         menu.addItem(.separator())
 
+        let iCloudDriveSync = NSMenuItem(title: L10n.iCloudDriveAssetSync, action: #selector(iCloudDriveSyncMenuItemClicked(_:)), keyEquivalent: "")
+        iCloudDriveSync.target = self
+        iCloudDriveSync.state = iCloudDriveSyncEnabled ? .on : .off
+        menu.addItem(iCloudDriveSync)
+        menu.addItem(.separator())
+
         let launchAtLogin = NSMenuItem(title: L10n.launchAtLogin, action: #selector(launchAtLoginMenuItemClicked(_:)), keyEquivalent: "")
         launchAtLogin.target = self
         launchAtLogin.state = LoginLaunchAgent.isEnabled ? .on : .off
@@ -3948,6 +4018,10 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         showPositionSummary.toggle()
         onShowPositionSummaryChange?(showPositionSummary)
         render()
+    }
+
+    @objc private func iCloudDriveSyncMenuItemClicked(_ sender: NSMenuItem) {
+        onICloudDriveSyncChange?(!iCloudDriveSyncEnabled)
     }
 
     @objc private func languageMenuItemClicked(_ sender: NSMenuItem) {
@@ -4482,6 +4556,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         case invalid
     }
 
+    private enum InitialAssetSyncDirection: Equatable {
+        case localToICloud
+        case iCloudToLocal
+        case cancel
+    }
+
     private var statusItem: NSStatusItem?
     private let tickerView = StatusTickerView()
     private let popover = NSPopover()
@@ -4499,6 +4579,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
+    private var lastAssetSyncData: Data?
+    private var assetSyncPollCountdown = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         FontRegistrar.registerBundledFonts()
@@ -4509,6 +4591,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         setupStatusItem()
         setupPopover()
+        resumeAssetSyncIfConfigured()
         updateViews()
         refresh()
 
@@ -4586,6 +4669,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         panelViewController.onShowPositionSummaryChange = { [weak self] visible in
             self?.setShowPositionSummary(visible)
         }
+        panelViewController.onICloudDriveSyncChange = { [weak self] enabled in
+            self?.setICloudDriveSyncEnabled(enabled)
+        }
         panelViewController.onRequestStockChart = { [weak self] assetID in
             self?.requestStockChart(assetID: assetID)
         }
@@ -4643,6 +4729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 stockDataSource: config.stockDataSource,
                 stockChartPeriod: config.stockChartPeriod,
                 showPositionSummary: config.showPositionSummary,
+                iCloudDriveSyncEnabled: config.iCloudDriveSyncEnabled,
                 language: config.language
             )
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -4723,6 +4810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc private func tick() {
         loadingFrame = (loadingFrame + 1) % 3
         tickerView.loadingFrame = loadingFrame
+        pollAssetSyncIfNeeded()
 
         guard !isRefreshing else {
             panelViewController.updateRefreshState(countdown: secondsUntilRefresh, isRefreshing: true)
@@ -4783,6 +4871,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             stockDataSource: config.stockDataSource,
             stockChartPeriod: config.stockChartPeriod,
             showPositionSummary: config.showPositionSummary,
+            iCloudDriveSyncEnabled: config.iCloudDriveSyncEnabled,
             language: config.language
         )
     }
@@ -4826,6 +4915,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         config.assets.append(asset)
         ConfigStore.write(config)
+        writeAssetSyncIfEnabled()
         assets.append(DisplayAsset.loading(from: asset))
         updateViews()
         refresh()
@@ -4835,6 +4925,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard let configIndex = config.assets.firstIndex(where: { key(for: $0) == id }) else { return }
         config.assets[configIndex].visibleInMenuBar = visibleInMenuBar
         ConfigStore.write(config)
+        writeAssetSyncIfEnabled()
 
         if let assetIndex = assets.firstIndex(where: { $0.id == id }) {
             assets[assetIndex].visibleInMenuBar = visibleInMenuBar
@@ -4847,6 +4938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         config.assets.removeAll { key(for: $0) == id }
         assets.removeAll { $0.id == id }
         ConfigStore.write(config)
+        writeAssetSyncIfEnabled()
         updateViews()
     }
 
@@ -4875,6 +4967,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         config.assets[configIndex].holdingQuantity = quantity
         config.assets[configIndex].averageBuyPrice = averageBuyPrice
         ConfigStore.write(config)
+        writeAssetSyncIfEnabled()
 
         if let assetIndex = assets.firstIndex(where: { $0.id == id }) {
             assets[assetIndex].holdingQuantity = quantity
@@ -4963,6 +5056,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let insertionIndex = placeAfterTarget ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval
         config.assets.insert(movedAsset, at: min(insertionIndex, config.assets.count))
         ConfigStore.write(config)
+        writeAssetSyncIfEnabled()
 
         let displayAssetsByID = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
         assets = config.assets.map { asset in
@@ -5000,6 +5094,158 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         config.showPositionSummary = visible
         ConfigStore.write(config)
         updateViews()
+    }
+
+    private func setICloudDriveSyncEnabled(_ enabled: Bool) {
+        guard enabled else {
+            config.iCloudDriveSyncEnabled = false
+            ConfigStore.write(config)
+            lastAssetSyncData = nil
+            updateViews()
+            return
+        }
+
+        guard let folderURL = chooseAssetSyncFolder() else { return }
+        let direction = chooseInitialAssetSyncDirection(folderURL: folderURL)
+        guard direction != .cancel else { return }
+
+        do {
+            switch direction {
+            case .localToICloud:
+                lastAssetSyncData = try AssetSyncFileStore.write(assets: config.assets, to: folderURL)
+            case .iCloudToLocal:
+                guard let cloudData = try AssetSyncFileStore.read(from: folderURL) else {
+                    showMessageAlert(message: L10n.assetSyncNoCloudData)
+                    return
+                }
+                lastAssetSyncData = cloudData.data
+                applySyncedAssets(cloudData.snapshot.assets)
+            case .cancel:
+                return
+            }
+            config.iCloudDriveSyncEnabled = true
+            config.syncFolderPath = folderURL.path
+            ConfigStore.write(config)
+            assetSyncPollCountdown = 5
+            updateViews()
+        } catch {
+            let message = direction == .localToICloud ? L10n.assetSyncWriteFailed : L10n.assetSyncReadFailed
+            showMessageAlert(message: message)
+            NSLog("CareAssets iCloud Drive sync setup failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func chooseAssetSyncFolder() -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = L10n.chooseICloudDriveFolder
+        panel.message = L10n.chooseICloudDriveFolderDetail
+        panel.prompt = L10n.text("选择", "Choose", zhHant: "選擇")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        let iCloudDriveURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+        if FileManager.default.fileExists(atPath: iCloudDriveURL.path) {
+            panel.directoryURL = iCloudDriveURL
+        }
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func chooseInitialAssetSyncDirection(folderURL: URL) -> InitialAssetSyncDirection {
+        let alert = NSAlert()
+        alert.messageText = L10n.positionSyncDirectionTitle
+        alert.informativeText = "\(L10n.assetSyncDirectionDetail)\n\n\(AssetSyncFileStore.fileURL(in: folderURL).path)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L10n.localOverwritesICloud)
+        alert.addButton(withTitle: L10n.iCloudOverwritesLocal)
+        alert.addButton(withTitle: L10n.cancel)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .localToICloud
+        case .alertSecondButtonReturn:
+            return .iCloudToLocal
+        default:
+            return .cancel
+        }
+    }
+
+    private func resumeAssetSyncIfConfigured() {
+        guard config.iCloudDriveSyncEnabled,
+              let path = config.syncFolderPath else { return }
+        let folderURL = URL(fileURLWithPath: path, isDirectory: true)
+        do {
+            if let cloudData = try AssetSyncFileStore.read(from: folderURL) {
+                lastAssetSyncData = cloudData.data
+                applySyncedAssets(cloudData.snapshot.assets)
+            } else {
+                lastAssetSyncData = try AssetSyncFileStore.write(assets: config.assets, to: folderURL)
+            }
+            assetSyncPollCountdown = 5
+        } catch {
+            NSLog("CareAssets iCloud Drive sync resume failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func pollAssetSyncIfNeeded() {
+        guard config.iCloudDriveSyncEnabled,
+              let path = config.syncFolderPath else { return }
+        assetSyncPollCountdown -= 1
+        guard assetSyncPollCountdown <= 0 else { return }
+        assetSyncPollCountdown = 5
+
+        do {
+            guard let cloudData = try AssetSyncFileStore.read(from: URL(fileURLWithPath: path, isDirectory: true)),
+                  cloudData.data != lastAssetSyncData else { return }
+            lastAssetSyncData = cloudData.data
+            applySyncedAssets(cloudData.snapshot.assets)
+        } catch {
+            NSLog("CareAssets iCloud Drive sync poll failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func writeAssetSyncIfEnabled() {
+        guard config.iCloudDriveSyncEnabled,
+              let path = config.syncFolderPath else { return }
+        do {
+            lastAssetSyncData = try AssetSyncFileStore.write(
+                assets: config.assets,
+                to: URL(fileURLWithPath: path, isDirectory: true)
+            )
+            assetSyncPollCountdown = 5
+        } catch {
+            showMessageAlert(message: L10n.assetSyncWriteFailed)
+            NSLog("CareAssets iCloud Drive sync write failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func applySyncedAssets(_ syncedAssets: [TrackedAsset]) {
+        var seen = Set<String>()
+        let uniqueAssets = syncedAssets.filter { asset in
+            let id = key(for: asset)
+            return !id.isEmpty && seen.insert(id).inserted
+        }
+
+        var currentDisplays: [String: DisplayAsset] = [:]
+        for asset in assets where currentDisplays[asset.id] == nil {
+            currentDisplays[asset.id] = asset
+        }
+        config.assets = uniqueAssets
+        ConfigStore.write(config)
+        assets = uniqueAssets.map { asset in
+            let id = key(for: asset)
+            var display = currentDisplays[id] ?? DisplayAsset.loading(from: asset)
+            display.name = asset.name
+            display.symbol = asset.symbol
+            display.canonicalSymbol = asset.canonicalSymbol
+            display.holdingQuantity = asset.holdingQuantity
+            display.averageBuyPrice = asset.averageBuyPrice
+            display.visibleInMenuBar = asset.visibleInMenuBar
+            return display
+        }
+        updateViews()
+        refresh()
     }
 
     private func requestStockChart(assetID: String) {
@@ -5567,8 +5813,24 @@ private func errorAsset(_ asset: TrackedAsset, source: String, message: String) 
     )
 }
 
+#if CAREASSETS_SYNC_TEST
+let testFolder = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+let expectedAssets = AppConfig.defaultConfig.assets
+let writtenData = try AssetSyncFileStore.write(assets: expectedAssets, to: testFolder)
+guard let loaded = try AssetSyncFileStore.read(from: testFolder) else {
+    fatalError("Asset sync snapshot was not created")
+}
+let testEncoder = JSONEncoder()
+testEncoder.outputFormatting = [.sortedKeys]
+guard try testEncoder.encode(loaded.snapshot.assets) == testEncoder.encode(expectedAssets),
+      loaded.data == writtenData else {
+    fatalError("Asset sync snapshot round-trip mismatch")
+}
+print("CareAssets asset sync round-trip passed")
+#else
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.setActivationPolicy(.accessory)
 app.delegate = delegate
 app.run()
+#endif
