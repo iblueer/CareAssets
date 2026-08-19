@@ -2885,7 +2885,6 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         let preferredSize = NSSize(width: panelWidth, height: preferredPanelHeight)
         preferredContentSize = preferredSize
         view.setFrameSize(preferredSize)
-        onPreferredContentSizeChange?(preferredSize)
 
         let root = NSStackView()
         root.orientation = .vertical
@@ -2914,6 +2913,20 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         if shouldFocusSearchField {
             shouldFocusSearchField = false
             focusSearchFieldIfNeeded()
+        }
+
+        // The popover must receive the new size after the replacement view tree
+        // has been laid out. This matters when a timer applies an iCloud sync
+        // update while the popover is already visible.
+        view.layoutSubtreeIfNeeded()
+        notifyPreferredContentSizeChange(preferredSize)
+    }
+
+    private func notifyPreferredContentSizeChange(_ size: NSSize) {
+        onPreferredContentSizeChange?(size)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.preferredContentSize == size else { return }
+            self.onPreferredContentSizeChange?(size)
         }
     }
 
