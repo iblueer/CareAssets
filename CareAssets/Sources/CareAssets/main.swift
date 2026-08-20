@@ -180,9 +180,9 @@ enum L10n {
     static var showPositionSummary: String { text("显示持仓汇总", "Show position summary", zhHant: "顯示持倉彙總", ja: "保有サマリーを表示", ar: "إظهار ملخص المراكز", de: "Positionsübersicht anzeigen", fr: "Afficher le résumé", ko: "보유 요약 표시", ptPT: "Mostrar resumo", es: "Mostrar resumen") }
     static var iCloudDriveAssetSync: String { text("iCloud Drive 同步", "Sync with iCloud Drive", zhHant: "iCloud Drive 同步") }
     static var chooseICloudDriveFolder: String { text("选择 iCloud Drive 文件夹", "Choose an iCloud Drive folder", zhHant: "選擇 iCloud Drive 資料夾") }
-    static var chooseICloudDriveFolderDetail: String { text("CareAssets 会在所选文件夹中保存关注列表和持仓同步文件。", "CareAssets will save its watchlist and position sync file in the selected folder.", zhHant: "CareAssets 會在所選資料夾中儲存關注列表和持倉同步檔案。") }
+    static var chooseICloudDriveFolderDetail: String { text("CareAssets 会在所选文件夹中保存关注列表和界面配置；交易记录保存在本机数据库中。", "CareAssets will save watchlist and interface settings in the selected folder; transaction records stay in the local database.", zhHant: "CareAssets 會在所選資料夾中儲存關注列表和介面設定；交易記錄保存在本機資料庫中。") }
     static var positionSyncDirectionTitle: String { text("选择首次同步方向", "Choose the initial sync direction", zhHant: "選擇首次同步方向") }
-    static var assetSyncDirectionDetail: String { text("请选择哪一份数据覆盖另一份。此操作会替换目标端的关注列表、排序、菜单栏显示状态和持仓数据。", "Choose which data replaces the other. This replaces the target's watchlist, order, menu bar visibility, and positions.", zhHant: "請選擇哪一份資料覆蓋另一份。此操作會取代目標端的關注列表、排序、選單列顯示狀態和持倉資料。") }
+    static var assetSyncDirectionDetail: String { text("请选择哪一份数据覆盖另一份。此操作会替换目标端的关注列表、排序和菜单栏显示状态，不包含交易记录。", "Choose which data replaces the other. This replaces the target's watchlist, order, and menu bar visibility, but not transaction records.", zhHant: "請選擇哪一份資料覆蓋另一份。此操作會取代目標端的關注列表、排序和選單列顯示狀態，不包含交易記錄。") }
     static var localOverwritesICloud: String { text("本机覆盖 iCloud", "This Mac → iCloud", zhHant: "本機覆蓋 iCloud") }
     static var iCloudOverwritesLocal: String { text("iCloud 覆盖本机", "iCloud → This Mac", zhHant: "iCloud 覆蓋本機") }
     static var assetSyncNoCloudData: String { text("所选文件夹中没有 CareAssets 同步文件。", "No CareAssets sync file exists in the selected folder.", zhHant: "所選資料夾中沒有 CareAssets 同步檔案。") }
@@ -432,6 +432,54 @@ struct TrackedAsset: Codable, Sendable {
     var holdingQuantity: Double?
     var averageBuyPrice: Double?
     var visibleInMenuBar: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case name
+        case symbol
+        case canonicalSymbol
+        case holdingQuantity
+        case averageBuyPrice
+        case visibleInMenuBar
+    }
+
+    init(
+        type: AssetType,
+        name: String,
+        symbol: String,
+        canonicalSymbol: String? = nil,
+        holdingQuantity: Double? = nil,
+        averageBuyPrice: Double? = nil,
+        visibleInMenuBar: Bool
+    ) {
+        self.type = type
+        self.name = name
+        self.symbol = symbol
+        self.canonicalSymbol = canonicalSymbol
+        self.holdingQuantity = holdingQuantity
+        self.averageBuyPrice = averageBuyPrice
+        self.visibleInMenuBar = visibleInMenuBar
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(AssetType.self, forKey: .type)
+        name = try container.decode(String.self, forKey: .name)
+        symbol = try container.decode(String.self, forKey: .symbol)
+        canonicalSymbol = try container.decodeIfPresent(String.self, forKey: .canonicalSymbol)
+        holdingQuantity = try container.decodeIfPresent(Double.self, forKey: .holdingQuantity)
+        averageBuyPrice = try container.decodeIfPresent(Double.self, forKey: .averageBuyPrice)
+        visibleInMenuBar = try container.decodeIfPresent(Bool.self, forKey: .visibleInMenuBar) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(name, forKey: .name)
+        try container.encode(symbol, forKey: .symbol)
+        try container.encodeIfPresent(canonicalSymbol, forKey: .canonicalSymbol)
+        try container.encode(visibleInMenuBar, forKey: .visibleInMenuBar)
+    }
 }
 
 struct AppConfig: Codable, Sendable {
@@ -618,11 +666,11 @@ struct AssetSearchResult: Sendable, Equatable {
     }
 }
 
-private func assetIdentity(for asset: TrackedAsset) -> String {
+func assetIdentity(for asset: TrackedAsset) -> String {
     assetIdentity(type: asset.type, symbol: asset.symbol, canonicalSymbol: asset.canonicalSymbol)
 }
 
-private func assetIdentity(type: AssetType, symbol: String, canonicalSymbol: String?) -> String {
+func assetIdentity(type: AssetType, symbol: String, canonicalSymbol: String?) -> String {
     "\(type.rawValue)-\((canonicalSymbol ?? canonicalAssetSymbol(type: type, symbol: symbol)).uppercased())"
 }
 
@@ -691,7 +739,7 @@ final class ConfigStore {
             let data = try Data(contentsOf: configURL)
             var config = try JSONDecoder().decode(AppConfig.self, from: data)
             if migrate(&config) {
-                write(config)
+                // 旧版持仓字段要先交给 PortfolioStore 迁移到 SQLite，之后再写入不含持仓字段的 config。
             }
             return config
         } catch {
@@ -2601,6 +2649,62 @@ final class StockChartView: NSView {
     var colorMode: PriceColorMode = .redFallGreenRise {
         didSet { needsDisplay = true }
     }
+    var currencyCode: String = "" {
+        didSet { updateTooltip() }
+    }
+
+    private var trackingArea: NSTrackingArea?
+    private var hoverIndex: Int? {
+        didSet {
+            updateTooltip()
+            needsDisplay = true
+        }
+    }
+    private let tooltip = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        tooltip.font = senFont(ofSize: 10.5)
+        tooltip.textColor = .white
+        tooltip.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.96)
+        tooltip.drawsBackground = true
+        tooltip.isBezeled = false
+        tooltip.wantsLayer = true
+        tooltip.layer?.cornerRadius = 5
+        tooltip.isHidden = true
+        addSubview(tooltip)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard points.count > 1 else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        let plot = bounds.insetBy(dx: 10, dy: 10)
+        let progress = min(1, max(0, (location.x - plot.minX) / plot.width))
+        hoverIndex = min(points.count - 1, max(0, Int((progress * CGFloat(points.count - 1)).rounded())))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverIndex = nil
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -2665,6 +2769,42 @@ final class StockChartView: NSView {
             let location = pointLocation(index)
             NSBezierPath(ovalIn: NSRect(x: location.x - 2.5, y: location.y - 2.5, width: 5, height: 5)).fill()
         }
+
+        if let hoverIndex {
+            let location = pointLocation(hoverIndex)
+            let crosshair = NSBezierPath()
+            crosshair.move(to: NSPoint(x: location.x, y: insetBounds.minY))
+            crosshair.line(to: NSPoint(x: location.x, y: insetBounds.maxY))
+            crosshair.lineWidth = 1
+            crosshair.setLineDash([3, 3], count: 2, phase: 0)
+            NSColor.white.withAlphaComponent(0.46).setStroke()
+            crosshair.stroke()
+            chartColor.setFill()
+            NSBezierPath(ovalIn: NSRect(x: location.x - 4, y: location.y - 4, width: 8, height: 8)).fill()
+        }
+    }
+
+    private func updateTooltip() {
+        guard let hoverIndex, points.indices.contains(hoverIndex) else {
+            tooltip.isHidden = true
+            return
+        }
+        let point = points[hoverIndex]
+        let date = DateFormatter.stockChartTooltip.string(from: point.date)
+        let price = currencyCode.isEmpty
+            ? formatNumber(point.price, minFraction: 2, maxFraction: 6)
+            : formatCurrencyWithCode(point.price, currencyCode: currencyCode, compact: false)
+        tooltip.stringValue = "\(date)  \(price)"
+        tooltip.sizeToFit()
+        tooltip.frame.size.width = min(172, max(108, tooltip.frame.width + 14))
+        tooltip.frame.size.height = 24
+        let plot = bounds.insetBy(dx: 10, dy: 10)
+        let x = plot.minX + CGFloat(hoverIndex) / CGFloat(max(1, points.count - 1)) * plot.width
+        tooltip.frame.origin = NSPoint(
+            x: min(max(6, x - tooltip.frame.width / 2), bounds.width - tooltip.frame.width - 6),
+            y: bounds.maxY - tooltip.frame.height - 8
+        )
+        tooltip.isHidden = false
     }
 
     private var chartColor: NSColor {
@@ -2673,6 +2813,15 @@ final class StockChartView: NSView {
         }
         return priceColor(for: last - first, mode: colorMode, whiteAlpha: 0.95)
     }
+}
+
+private extension DateFormatter {
+    static let stockChartTooltip: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd HH:mm"
+        formatter.locale = Locale(identifier: "zh_CN")
+        return formatter
+    }()
 }
 
 final class SearchResultActionButton: NSButton {
@@ -2747,6 +2896,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     var onICloudDriveSyncChange: ((Bool) -> Void)?
     var onRequestStockChart: ((String) -> Void)?
     var onLanguageChange: ((AppLanguage) -> Void)?
+    var onOpenMainWindow: (() -> Void)?
     var onPreferredContentSizeChange: ((NSSize) -> Void)?
     var onQuit: (() -> Void)?
 
@@ -3425,6 +3575,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
             chart.points = points
             chart.previousClose = asset.previousClose
             chart.colorMode = colorMode
+            chart.currencyCode = asset.currency ?? ""
             chart.widthAnchor.constraint(equalToConstant: contentWidth - 16).isActive = true
             chart.heightAnchor.constraint(greaterThanOrEqualToConstant: asset.hasPosition ? 54 : 72).isActive = true
             chartContent.addArrangedSubview(chart)
@@ -3781,6 +3932,10 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private func makeSettingsMenu() -> NSMenu {
         let menu = NSMenu()
         menu.appearance = NSAppearance(named: .darkAqua)
+        let mainWindow = NSMenuItem(title: "打开主窗口", action: #selector(openMainWindowMenuItemClicked(_:)), keyEquivalent: "")
+        mainWindow.target = self
+        menu.addItem(mainWindow)
+        menu.addItem(.separator())
         menu.addItem(makeParentMenuItem(title: L10n.colorSetting, submenu: makeColorModeMenu()))
         menu.addItem(makeParentMenuItem(title: L10n.statusBarBackgroundSetting, submenu: makeStatusBarBackgroundMenu()))
         menu.addItem(makeParentMenuItem(title: L10n.stockChartSetting, submenu: makeStockChartPeriodMenu()))
@@ -4035,6 +4190,10 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 
     @objc private func iCloudDriveSyncMenuItemClicked(_ sender: NSMenuItem) {
         onICloudDriveSyncChange?(!iCloudDriveSyncEnabled)
+    }
+
+    @objc private func openMainWindowMenuItemClicked(_ sender: NSMenuItem) {
+        onOpenMainWindow?()
     }
 
     @objc private func languageMenuItemClicked(_ sender: NSMenuItem) {
@@ -4580,10 +4739,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
     private let panelViewController = AssetPanelViewController()
     private let service = AssetService()
+    private let portfolioStore = PortfolioStore()
     private var previewWindow: NSWindow?
+    private var mainWindowController: PortfolioMainWindowController?
 
     private var config = ConfigStore.loadOrCreate()
     private var assets: [DisplayAsset] = []
+    private var portfolioTransactions: [PortfolioTransaction] = []
+    private var portfolioSummary = PortfolioSummary.empty
+    private var mainWindowChartStates: [String: StockChartState] = [:]
     private var timer: Timer?
     private var secondsUntilRefresh = 0
     private var isRefreshing = false
@@ -4598,6 +4762,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         FontRegistrar.registerBundledFonts()
         L10n.appLanguage = config.language
+        portfolioStore.migrateLegacyPositions(from: config.assets)
+        reloadPortfolioState()
+        ConfigStore.write(config)
+        setupApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         assets = config.assets.map(DisplayAsset.loading)
         secondsUntilRefresh = max(10, config.refreshIntervalSeconds)
@@ -4612,8 +4780,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             || ProcessInfo.processInfo.arguments.contains("--preview") {
             showPreviewWindow()
         }
+        if ProcessInfo.processInfo.arguments.contains("--main-window")
+            || !ProcessInfo.processInfo.arguments.contains("--preview") {
+            showMainWindow()
+        }
 
         timer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+    }
+
+    private func setupApplicationMenu() {
+        let mainMenu = NSMenu(title: "CareAssets")
+
+        let appMenu = NSMenu(title: "CareAssets")
+        appMenu.addItem(withTitle: "关于 CareAssets", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle: "隐藏 CareAssets", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "隐藏其他", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "显示全部", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle: "退出 CareAssets", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        let appMenuItem = NSMenuItem()
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let fileMenu = NSMenu(title: "文件")
+        fileMenu.addItem(withTitle: "打开主窗口", action: #selector(openMainWindowFromApplicationMenu(_:)), keyEquivalent: "0")
+        fileMenu.addItem(withTitle: "刷新行情", action: #selector(refreshFromApplicationMenu(_:)), keyEquivalent: "r")
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let fileMenuItem = NSMenuItem(title: "文件", action: nil, keyEquivalent: "")
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        let windowMenu = NSMenu(title: "窗口")
+        windowMenu.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(withTitle: "将所有窗口置于最前", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        let windowMenuItem = NSMenuItem(title: "窗口", action: nil, keyEquivalent: "")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+
+        NSApp.mainMenu = mainMenu
+        NSApp.windowsMenu = windowMenu
+    }
+
+    @objc private func showAboutPanel(_ sender: Any?) {
+        NSApp.orderFrontStandardAboutPanel(sender)
+    }
+
+    @objc private func openMainWindowFromApplicationMenu(_ sender: Any?) {
+        showMainWindow()
+    }
+
+    @objc private func refreshFromApplicationMenu(_ sender: Any?) {
+        refresh()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showMainWindow()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     private func setupStatusItem() {
@@ -4690,6 +4921,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         panelViewController.onLanguageChange = { [weak self] language in
             self?.setLanguage(language)
+        }
+        panelViewController.onOpenMainWindow = { [weak self] in
+            self?.showMainWindow()
         }
         panelViewController.onPreferredContentSizeChange = { [weak self] size in
             self?.popover.contentSize = size
@@ -4843,6 +5077,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         config = ConfigStore.loadOrCreate()
         L10n.appLanguage = config.language
+        reloadPortfolioState()
         secondsUntilRefresh = max(10, config.refreshIntervalSeconds)
         isRefreshing = true
         updateViews()
@@ -4854,8 +5089,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 let fetchedByID = Dictionary(uniqueKeysWithValues: fetchedAssets.map { ($0.id, $0) })
                 self.assets = self.config.assets.map { asset in
                     let id = self.key(for: asset)
-                    return fetchedByID[id] ?? self.assets.first(where: { $0.id == id }) ?? DisplayAsset.loading(from: asset)
+                    var display = fetchedByID[id] ?? self.assets.first(where: { $0.id == id }) ?? DisplayAsset.loading(from: asset)
+                    display.holdingQuantity = asset.holdingQuantity
+                    display.averageBuyPrice = asset.averageBuyPrice
+                    return display
                 }
+                self.reloadPortfolioState()
+                self.portfolioStore.recordSnapshots(summary: self.portfolioSummary)
                 self.isRefreshing = false
                 self.secondsUntilRefresh = max(10, self.config.refreshIntervalSeconds)
                 self.updateViews()
@@ -4887,6 +5127,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             iCloudDriveSyncEnabled: config.iCloudDriveSyncEnabled,
             language: config.language
         )
+        updateMainWindow()
+    }
+
+    private func reloadPortfolioState() {
+        portfolioTransactions = portfolioStore.loadTransactions()
+        portfolioSummary = PortfolioCalculator.calculate(transactions: portfolioTransactions, assets: assets)
+
+        let positionsByID = Dictionary(uniqueKeysWithValues: portfolioSummary.positions.map { ($0.assetID, $0) })
+        for index in config.assets.indices {
+            let id = key(for: config.assets[index])
+            config.assets[index].holdingQuantity = positionsByID[id]?.quantity
+            config.assets[index].averageBuyPrice = positionsByID[id]?.averageCost
+        }
+        for index in assets.indices {
+            let position = positionsByID[assets[index].id]
+            assets[index].holdingQuantity = position?.quantity
+            assets[index].averageBuyPrice = position?.averageCost
+        }
+    }
+
+    private func updateMainWindow() {
+        guard let mainWindowController else { return }
+        mainWindowController.portfolioViewController.update(
+            trackedAssets: config.assets,
+            displayAssets: assets,
+            summary: portfolioSummary,
+            transactions: portfolioTransactions,
+            snapshots: portfolioStore.loadSnapshots(),
+            positionChartStates: mainWindowChartStates
+        )
+    }
+
+    private func showMainWindow() {
+        NSLog("CareAssets opening portfolio main window")
+        previewWindow?.orderOut(nil)
+        if mainWindowController == nil {
+            let controller = PortfolioMainWindowController()
+            controller.portfolioViewController.onAddTransaction = { [weak self] transaction in
+                self?.addPortfolioTransaction(transaction)
+            }
+            controller.portfolioViewController.onUpdateTransaction = { [weak self] transaction in
+                self?.updatePortfolioTransaction(transaction)
+            }
+            controller.portfolioViewController.onDeleteTransaction = { [weak self] id in
+                self?.deletePortfolioTransaction(id: id)
+            }
+            controller.portfolioViewController.onRefresh = { [weak self] in
+                self?.refresh()
+            }
+            controller.portfolioViewController.onRequestPositionChart = { [weak self] assetID, period in
+                self?.requestMainWindowPositionChart(assetID: assetID, period: period)
+            }
+            mainWindowController = controller
+        }
+        updateMainWindow()
+        mainWindowController?.present()
+        NSLog("CareAssets portfolio main window requested")
+    }
+
+    private func addPortfolioTransaction(_ transaction: PortfolioTransaction) {
+        if transaction.kind == .sell,
+           let assetID = transaction.assetID,
+           let position = portfolioSummary.positions.first(where: { $0.assetID == assetID }),
+           transaction.quantity > position.quantity + 0.00000001 {
+            showMessageAlert(message: "卖出数量超过当前持仓数量。")
+            return
+        }
+
+        do {
+            try portfolioStore.insert(transaction)
+            reloadPortfolioState()
+            portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
+            updateViews()
+        } catch {
+            showMessageAlert(message: "保存交易失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func deletePortfolioTransaction(id: UUID) {
+        guard let transaction = portfolioTransactions.first(where: { $0.id == id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "删除这条记录？"
+        alert.informativeText = "删除后，持仓和历史统计会重新计算。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try portfolioStore.delete(id: transaction.id)
+            reloadPortfolioState()
+            portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
+            updateViews()
+        } catch {
+            showMessageAlert(message: "删除交易失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func updatePortfolioTransaction(_ transaction: PortfolioTransaction) {
+        guard portfolioTransactions.contains(where: { $0.id == transaction.id }) else { return }
+
+        if transaction.kind == .sell,
+           let assetID = transaction.assetID {
+            let transactionsWithoutCurrent = portfolioTransactions.filter { $0.id != transaction.id }
+            let summaryWithoutCurrent = PortfolioCalculator.calculate(transactions: transactionsWithoutCurrent, assets: assets)
+            let availableQuantity = summaryWithoutCurrent.positions.first(where: { $0.assetID == assetID })?.quantity ?? 0
+            if transaction.quantity > availableQuantity + 0.00000001 {
+                showMessageAlert(message: "卖出数量超过修改前可用持仓数量。")
+                return
+            }
+        }
+
+        do {
+            try portfolioStore.update(transaction)
+            reloadPortfolioState()
+            portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
+            updateViews()
+        } catch {
+            showMessageAlert(message: "更新交易失败：\(error.localizedDescription)")
+        }
     }
 
     private func visibleMenuAssets() -> [DisplayAsset] {
@@ -4979,14 +5338,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         config.assets[configIndex].holdingQuantity = quantity
         config.assets[configIndex].averageBuyPrice = averageBuyPrice
+        do {
+            try portfolioStore.replaceOpeningPosition(
+                asset: config.assets[configIndex],
+                quantity: quantity,
+                averagePrice: averageBuyPrice
+            )
+        } catch {
+            showMessageAlert(message: "保存持仓失败：\(error.localizedDescription)")
+            return
+        }
         ConfigStore.write(config)
         writeAssetSyncIfEnabled()
-
-        if let assetIndex = assets.firstIndex(where: { $0.id == id }) {
-            assets[assetIndex].holdingQuantity = quantity
-            assets[assetIndex].averageBuyPrice = averageBuyPrice
-        }
-
+        reloadPortfolioState()
+        portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
         updateViews()
     }
 
@@ -5092,6 +5457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func setStockDataSource(_ source: StockDataSource) {
         config.stockDataSource = source
+        mainWindowChartStates.removeAll()
         ConfigStore.write(config)
         updateViews()
         refresh()
@@ -5289,6 +5655,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         period: period,
                         state: .failed
                     )
+                }
+            }
+        }
+    }
+
+    private func requestMainWindowPositionChart(assetID: String, period: StockChartPeriod) {
+        let chartKey = "\(assetID)|\(period.rawValue)"
+        if case .loading = mainWindowChartStates[chartKey] {
+            return
+        }
+
+        guard let asset = config.assets.first(where: { self.key(for: $0) == assetID }) else {
+            mainWindowChartStates[chartKey] = .unavailable
+            updateMainWindow()
+            return
+        }
+        guard asset.type == .stock, period != .off else {
+            mainWindowChartStates[chartKey] = .unavailable
+            updateMainWindow()
+            return
+        }
+
+        mainWindowChartStates[chartKey] = .loading
+        updateMainWindow()
+
+        let source: StockDataSource = config.stockDataSource == .tencent ? .eastMoney : config.stockDataSource
+        Task {
+            do {
+                let points = try await service.fetchStockChart(asset, dataSource: source, period: period)
+                await MainActor.run {
+                    self.mainWindowChartStates[chartKey] = points.count > 1 ? .loaded(points) : .unavailable
+                    self.updateMainWindow()
+                }
+            } catch {
+                await MainActor.run {
+                    self.mainWindowChartStates[chartKey] = .failed
+                    self.updateMainWindow()
                 }
             }
         }
@@ -5576,7 +5979,7 @@ private func latestDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
     }
 }
 
-private func formatNumber(_ value: Double, minFraction: Int, maxFraction: Int, usesGroupingSeparator: Bool = true) -> String {
+func formatNumber(_ value: Double, minFraction: Int, maxFraction: Int, usesGroupingSeparator: Bool = true) -> String {
     let formatter = NumberFormatter()
     formatter.numberStyle = .decimal
     formatter.usesGroupingSeparator = usesGroupingSeparator
@@ -5636,7 +6039,7 @@ private func formatCurrency(_ value: Double, currencyCode: String, compact: Bool
     return "\(symbol)\(number)"
 }
 
-private func formatCurrencyWithCode(_ value: Double, currencyCode: String, compact: Bool) -> String {
+func formatCurrencyWithCode(_ value: Double, currencyCode: String, compact: Bool) -> String {
     let number = compact
         ? formatCompact(value)
         : formatNumber(value, minFraction: 2, maxFraction: 2)
@@ -5655,7 +6058,7 @@ private func formatSignedCurrency(_ value: Double, currencyCode: String, compact
     return "\(sign)\(symbol)\(number)"
 }
 
-private func formatSignedCurrencyWithCode(_ value: Double, currencyCode: String, compact: Bool = false) -> String {
+func formatSignedCurrencyWithCode(_ value: Double, currencyCode: String, compact: Bool = false) -> String {
     let sign = value > 0 ? "+" : value < 0 ? "-" : ""
     let number = compact
         ? formatCompact(abs(value))
@@ -5700,7 +6103,7 @@ private func formatChange(amount: Double?, percent: Double?, currencyPrefix: Str
     return "\(amountText) · \(percentText)"
 }
 
-private func formatPercent(_ percent: Double?) -> String {
+func formatPercent(_ percent: Double?) -> String {
     guard let percent else {
         return "--"
     }
@@ -5716,7 +6119,7 @@ private func priceColor(for asset: DisplayAsset, mode: PriceColorMode, whiteAlph
     return priceColor(for: asset.changePercent, mode: mode, whiteAlpha: whiteAlpha)
 }
 
-private func priceColor(for percent: Double?, mode: PriceColorMode, whiteAlpha: CGFloat) -> NSColor {
+func priceColor(for percent: Double?, mode: PriceColorMode, whiteAlpha: CGFloat) -> NSColor {
     let white = NSColor.white.withAlphaComponent(whiteAlpha)
     guard let percent, percent != 0 else {
         return white
@@ -5748,7 +6151,7 @@ private func appLogoImage() -> NSImage? {
     return nil
 }
 
-private func appFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+func appFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
     for name in ["TeX Gyre Adventor", "TeXGyreAdventor", "Didact Gothic"] {
         guard let font = NSFont(name: name, size: size) else { continue }
         if [.semibold, .bold, .heavy, .black].contains(weight) {
@@ -5760,7 +6163,7 @@ private func appFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> 
     return NSFont.systemFont(ofSize: size, weight: weight)
 }
 
-private func senFont(ofSize size: CGFloat) -> NSFont {
+func senFont(ofSize size: CGFloat) -> NSFont {
     for name in ["Sen-Medium", "Sen Medium", "Sen"] {
         if let font = NSFont(name: name, size: size) {
             return font
@@ -5769,7 +6172,7 @@ private func senFont(ofSize size: CGFloat) -> NSFont {
     return NSFont.systemFont(ofSize: size, weight: .medium)
 }
 
-private func mixedAttributedString(
+func mixedAttributedString(
     _ text: String,
     baseFont: NSFont,
     asciiFont: NSFont,
@@ -5826,7 +6229,9 @@ private func errorAsset(_ asset: TrackedAsset, source: String, message: String) 
     )
 }
 
-#if CAREASSETS_SYNC_TEST
+#if CAREASSETS_PORTFOLIO_TEST
+PortfolioTestRunner.run()
+#elseif CAREASSETS_SYNC_TEST
 let testFolder = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 let expectedAssets = AppConfig.defaultConfig.assets
 let writtenData = try AssetSyncFileStore.write(assets: expectedAssets, to: testFolder)
@@ -5843,7 +6248,7 @@ print("CareAssets asset sync round-trip passed")
 #else
 let app = NSApplication.shared
 let delegate = AppDelegate()
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()
 #endif

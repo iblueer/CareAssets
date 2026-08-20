@@ -67,15 +67,17 @@ cp "$SEN_LICENSE" "$FONTS_DIR/Sen-OFL.txt"
 generate_icon_assets || true
 
 binaries=()
+SOURCE_FILES=("$ROOT_DIR"/Sources/CareAssets/*.swift)
 for arch in $ARCHS; do
   binary="$BUILD_DIR/$APP_NAME-$arch"
   xcrun swiftc \
     -target "$arch-apple-macosx$MACOS_DEPLOYMENT_TARGET" \
     -sdk "$SDK_PATH" \
-    "$ROOT_DIR/Sources/CareAssets/main.swift" \
+    "${SOURCE_FILES[@]}" \
     -framework AppKit \
     -framework CoreText \
     -framework Foundation \
+    -lsqlite3 \
     -o "$binary"
   binaries+=("$binary")
 done
