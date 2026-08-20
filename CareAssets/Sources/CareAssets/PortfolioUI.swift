@@ -309,8 +309,36 @@ final class PortfolioMainWindowController: NSWindowController {
 final class PortfolioMainViewController: NSViewController {
     private enum Section: String {
         case overview = "总览"
-        case positions = "持仓"
+        case watchlist = "自选"
         case transactions = "交易记录"
+    }
+
+    private enum WatchlistFilter: Int {
+        case all
+        case held
+
+        var title: String {
+            switch self {
+            case .all: return "全部自选"
+            case .held: return "仅持仓"
+            }
+        }
+    }
+
+    private struct WatchlistItem {
+        var assetID: String
+        var name: String
+        var symbol: String
+        var currency: String?
+        var currentPrice: Double?
+        var previousClose: Double?
+        var changePercent: Double?
+        var errorMessage: String?
+        var position: PortfolioPosition?
+
+        var isHeld: Bool {
+            (position?.quantity ?? 0) > 0
+        }
     }
 
     var onAddTransaction: ((PortfolioTransaction) -> Void)?
@@ -326,9 +354,10 @@ final class PortfolioMainViewController: NSViewController {
     private var transactions: [PortfolioTransaction] = []
     private var snapshots: [PortfolioSnapshot] = []
     private var positionChartStates: [String: StockChartState] = [:]
-    private var selectedPositionID: String?
-    private var positionChartPeriod: StockChartPeriod = .month
-    private var requestedPositionChartKey: String?
+    private var selectedWatchlistAssetID: String?
+    private var watchlistChartPeriod: StockChartPeriod = .month
+    private var requestedWatchlistChartKey: String?
+    private var watchlistFilter: WatchlistFilter = .all
     private var selectedMetric: PortfolioChartMetric = .marketValue
     private var selectedCurrency = ""
     private var sectionButtons: [Section: NSButton] = [:]
@@ -357,14 +386,7 @@ final class PortfolioMainViewController: NSViewController {
         self.transactions = transactions
         self.snapshots = snapshots
         self.positionChartStates = positionChartStates
-        let visiblePositions = summary.positions.filter { $0.quantity > 0 }
-        if let selectedPositionID,
-           visiblePositions.contains(where: { $0.assetID == selectedPositionID }) {
-            self.selectedPositionID = selectedPositionID
-        } else {
-            self.selectedPositionID = visiblePositions.first?.assetID
-            self.requestedPositionChartKey = nil
-        }
+        normalizeWatchlistSelection()
         if selectedCurrency.isEmpty || summary.currencies[selectedCurrency] == nil {
             selectedCurrency = summary.primaryCurrency ?? ""
         }
@@ -424,7 +446,7 @@ final class PortfolioMainViewController: NSViewController {
         menu.spacing = 5
         menu.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(menu)
-        for item in [Section.overview, .positions, .transactions] {
+        for item in [Section.overview, .watchlist, .transactions] {
             let button = NSButton(title: item.rawValue, target: self, action: #selector(sectionClicked(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(item.rawValue)
             button.alignment = .left
@@ -494,7 +516,7 @@ final class PortfolioMainViewController: NSViewController {
 
     @objc private func sectionClicked(_ sender: NSButton) {
         switch sender.identifier?.rawValue {
-        case Section.positions.rawValue: section = .positions
+        case Section.watchlist.rawValue: section = .watchlist
         case Section.transactions.rawValue: section = .transactions
         default: section = .overview
         }
@@ -582,8 +604,8 @@ final class PortfolioMainViewController: NSViewController {
         switch section {
         case .overview:
             buildOverview(in: body)
-        case .positions:
-            buildPositions(in: body)
+        case .watchlist:
+            buildWatchlist(in: body)
         case .transactions:
             buildTransactions(in: body)
         }
@@ -661,23 +683,23 @@ final class PortfolioMainViewController: NSViewController {
         stack.addArrangedSubview(chart)
     }
 
-    private func buildPositions(in body: NSView) {
-        let visiblePositions = summary.positions.filter { $0.quantity > 0 }
+    private func buildWatchlist(in body: NSView) {
+        let items = filteredWatchlistItems()
         let split = NSSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
         split.translatesAutoresizingMaskIntoConstraints = false
         body.addSubview(split)
 
-        let listPane = makePositionListPane(visiblePositions)
+        let listPane = makeWatchlistListPane(items)
         split.addArrangedSubview(listPane)
         listPane.widthAnchor.constraint(equalToConstant: 240).isActive = true
         listPane.setContentHuggingPriority(.required, for: .horizontal)
         listPane.setContentCompressionResistancePriority(.required, for: .horizontal)
-        if let selectedPosition = visiblePositions.first(where: { $0.assetID == selectedPositionID }) ?? visiblePositions.first {
-            split.addArrangedSubview(makePositionDetailPane(for: selectedPosition))
+        if let selectedItem = items.first(where: { $0.assetID == selectedWatchlistAssetID }) ?? items.first {
+            split.addArrangedSubview(makeWatchlistDetailPane(for: selectedItem))
         } else {
-            split.addArrangedSubview(makeEmptyPositionDetailPane())
+            split.addArrangedSubview(makeEmptyWatchlistDetailPane())
         }
 
         NSLayoutConstraint.activate([
@@ -688,11 +710,11 @@ final class PortfolioMainViewController: NSViewController {
         ])
 
         DispatchQueue.main.async { [weak self] in
-            self?.requestSelectedPositionChartIfNeeded()
+            self?.requestSelectedWatchlistChartIfNeeded()
         }
     }
 
-    private func makePositionListPane(_ positions: [PortfolioPosition]) -> NSView {
+    private func makeWatchlistListPane(_ items: [WatchlistItem]) -> NSView {
         let pane = NSView()
         pane.wantsLayer = true
         pane.layer?.backgroundColor = PortfolioTheme.sidebarBackground.cgColor
@@ -704,15 +726,29 @@ final class PortfolioMainViewController: NSViewController {
         header.translatesAutoresizingMaskIntoConstraints = false
         pane.addSubview(header)
 
-        let title = NSTextField(labelWithString: "当前持仓")
+        let title = NSTextField(labelWithString: "自选列表")
         title.font = appFont(ofSize: 14, weight: .bold)
         title.textColor = .white
         header.addArrangedSubview(title)
 
-        let count = NSTextField(labelWithString: "\(positions.count) 只")
+        let allCount = watchlistItems().count
+        let countText = watchlistFilter == .all ? "\(allCount) 只" : "\(items.count) / \(allCount) 只"
+        let count = NSTextField(labelWithString: countText)
         count.font = appFont(ofSize: 11, weight: .medium)
         count.textColor = PortfolioTheme.mutedText
         header.addArrangedSubview(count)
+
+        let filter = NSSegmentedControl(
+            labels: [WatchlistFilter.all.title, WatchlistFilter.held.title],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(watchlistFilterChanged(_:))
+        )
+        filter.selectedSegment = watchlistFilter.rawValue
+        filter.controlSize = .small
+        filter.font = appFont(ofSize: 11, weight: .medium)
+        filter.translatesAutoresizingMaskIntoConstraints = false
+        pane.addSubview(filter)
 
         let scroll = makeScrollView()
         pane.addSubview(scroll)
@@ -723,13 +759,16 @@ final class PortfolioMainViewController: NSViewController {
         scroll.documentView = document
         document.translatesAutoresizingMaskIntoConstraints = false
 
-        for position in positions {
-            let row = makePositionListRow(position)
+        for item in items {
+            let row = makeWatchlistListRow(item)
             list.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
         }
-        if positions.isEmpty {
-            let empty = NSTextField(wrappingLabelWithString: "暂无持仓\n记录买入后，这里会显示持仓列表。")
+        if items.isEmpty {
+            let message = watchlistFilter == .held
+                ? "暂无持仓\n记录买入后，这里会显示持仓列表。"
+                : "暂无自选\n请先在悬浮窗中添加想要关注的标的。"
+            let empty = NSTextField(wrappingLabelWithString: message)
             empty.font = appFont(ofSize: 13, weight: .medium)
             empty.textColor = NSColor.white.withAlphaComponent(0.45)
             empty.alignment = .center
@@ -743,9 +782,13 @@ final class PortfolioMainViewController: NSViewController {
             header.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -14),
             header.topAnchor.constraint(equalTo: pane.topAnchor, constant: 16),
             header.heightAnchor.constraint(equalToConstant: 24),
+            filter.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+            filter.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -10),
+            filter.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            filter.heightAnchor.constraint(equalToConstant: 28),
             scroll.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -10),
-            scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            scroll.topAnchor.constraint(equalTo: filter.bottomAnchor, constant: 10),
             scroll.bottomAnchor.constraint(equalTo: pane.bottomAnchor, constant: -10),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             list.leadingAnchor.constraint(equalTo: document.leadingAnchor),
@@ -756,9 +799,9 @@ final class PortfolioMainViewController: NSViewController {
         return pane
     }
 
-    private func makePositionListRow(_ position: PortfolioPosition) -> NSButton {
-        let button = NSButton(title: "", target: self, action: #selector(positionListRowClicked(_:)))
-        button.identifier = NSUserInterfaceItemIdentifier(position.assetID)
+    private func makeWatchlistListRow(_ item: WatchlistItem) -> NSButton {
+        let button = NSButton(title: "", target: self, action: #selector(watchlistRowClicked(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier(item.assetID)
         button.isBordered = false
         button.focusRingType = .none
         button.alignment = .left
@@ -767,59 +810,76 @@ final class PortfolioMainViewController: NSViewController {
         button.layer?.cornerRadius = 8
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        button.layer?.backgroundColor = (position.assetID == selectedPositionID
+        button.layer?.backgroundColor = (item.assetID == selectedWatchlistAssetID
             ? PortfolioTheme.selectedFill
             : PortfolioTheme.raisedSurface).cgColor
-        button.layer?.borderColor = (position.assetID == selectedPositionID
+        button.layer?.borderColor = (item.assetID == selectedWatchlistAssetID
             ? PortfolioTheme.selectedBorder
             : PortfolioTheme.surfaceBorder).cgColor
         button.layer?.borderWidth = 1
         button.heightAnchor.constraint(equalToConstant: 78).isActive = true
 
-        let currentPrice = position.currentPrice.map {
-            formatCurrencyWithCode($0, currencyCode: position.currency, compact: true)
-        } ?? "--"
-        let marketValue = position.marketValue.map {
-            formatCurrencyWithCode($0, currencyCode: position.currency, compact: true)
-        } ?? "--"
-        let pnl = position.unrealizedPnl.map {
-            formatSignedCurrencyWithCode($0, currencyCode: position.currency, compact: true)
-        } ?? "--"
-        let quantity = formatNumber(position.quantity, minFraction: 0, maxFraction: 6)
+        let currentPrice = formattedWatchlistPrice(item, compact: true)
         let paragraph = PortfolioTheme.leftAlignedParagraph(inset: 12, lineSpacing: 1)
-        let title = NSMutableAttributedString(string: "\(position.name)  \(position.symbol)\n", attributes: [
+        let title = NSMutableAttributedString(string: "\(item.name)  \(item.symbol)\n", attributes: [
             .font: appFont(ofSize: 13, weight: .semibold),
             .foregroundColor: PortfolioTheme.primaryText,
             .paragraphStyle: paragraph
         ])
-        title.append(NSAttributedString(string: "\(quantity) 股 · 现价 \(currentPrice)\n", attributes: [
-            .font: appFont(ofSize: 11, weight: .regular),
-            .foregroundColor: PortfolioTheme.tertiaryText,
-            .paragraphStyle: paragraph
-        ]))
-        title.append(NSAttributedString(string: "市值 \(marketValue) · \(pnl)", attributes: [
-            .font: appFont(ofSize: 11, weight: .medium),
-            .foregroundColor: position.unrealizedPnl.map { $0 >= 0 ? NSColor.systemGreen : NSColor.systemRed } ?? PortfolioTheme.tertiaryText,
-            .paragraphStyle: paragraph
-        ]))
+        if let position = item.position, item.isHeld {
+            let marketValue = position.marketValue.map {
+                formatCurrencyWithCode($0, currencyCode: position.currency, compact: true)
+            } ?? "--"
+            let pnl = position.unrealizedPnl.map {
+                formatSignedCurrencyWithCode($0, currencyCode: position.currency, compact: true)
+            } ?? "--"
+            let quantity = formatNumber(position.quantity, minFraction: 0, maxFraction: 6)
+            title.append(NSAttributedString(string: "\(quantity) 股 · 现价 \(currentPrice)\n", attributes: [
+                .font: appFont(ofSize: 11, weight: .regular),
+                .foregroundColor: PortfolioTheme.tertiaryText,
+                .paragraphStyle: paragraph
+            ]))
+            title.append(NSAttributedString(string: "市值 \(marketValue) · \(pnl)", attributes: [
+                .font: appFont(ofSize: 11, weight: .medium),
+                .foregroundColor: position.unrealizedPnl.map { $0 >= 0 ? NSColor.systemGreen : NSColor.systemRed } ?? PortfolioTheme.tertiaryText,
+                .paragraphStyle: paragraph
+            ]))
+        } else {
+            title.append(NSAttributedString(string: "现价 \(currentPrice) · \(formattedWatchlistChange(item))\n", attributes: [
+                .font: appFont(ofSize: 11, weight: .regular),
+                .foregroundColor: watchlistChangeColor(item),
+                .paragraphStyle: paragraph
+            ]))
+            title.append(NSAttributedString(string: "未持仓", attributes: [
+                .font: appFont(ofSize: 11, weight: .medium),
+                .foregroundColor: PortfolioTheme.mutedText,
+                .paragraphStyle: paragraph
+            ]))
+        }
         button.attributedTitle = title
         button.cell?.lineBreakMode = .byWordWrapping
         button.cell?.wraps = true
         return button
     }
 
-    private func makePositionDetailPane(for position: PortfolioPosition) -> NSView {
+    private func makeWatchlistDetailPane(for item: WatchlistItem) -> NSView {
         let pane = NSView()
         pane.wantsLayer = true
         pane.layer?.backgroundColor = PortfolioTheme.pageBackground.cgColor
 
-        let title = NSTextField(labelWithString: "\(position.name)  \(position.symbol)")
+        let title = NSTextField(labelWithString: "\(item.name)  \(item.symbol)")
         title.font = appFont(ofSize: 20, weight: .bold)
         title.textColor = .white
         title.translatesAutoresizingMaskIntoConstraints = false
         pane.addSubview(title)
 
-        let subtitle = NSTextField(labelWithString: "\(formatNumber(position.quantity, minFraction: 0, maxFraction: 6)) 股 · 平均成本 \(formatCurrencyWithCode(position.averageCost, currencyCode: position.currency, compact: false))")
+        let subtitleText: String
+        if let position = item.position, item.isHeld {
+            subtitleText = "\(formatNumber(position.quantity, minFraction: 0, maxFraction: 6)) 股 · 平均成本 \(formatCurrencyWithCode(position.averageCost, currencyCode: position.currency, compact: false))"
+        } else {
+            subtitleText = "已加入自选 · 尚未记录持仓"
+        }
+        let subtitle = NSTextField(labelWithString: subtitleText)
         subtitle.font = appFont(ofSize: 12, weight: .medium)
         subtitle.textColor = PortfolioTheme.tertiaryText
         subtitle.translatesAutoresizingMaskIntoConstraints = false
@@ -827,22 +887,25 @@ final class PortfolioMainViewController: NSViewController {
 
         let periodPopup = NSPopUpButton()
         periodPopup.addItems(withTitles: [StockChartPeriod.day, .week, .month, .year].map(\.title))
-        periodPopup.selectItem(withTitle: positionChartPeriod.title)
+        periodPopup.selectItem(withTitle: watchlistChartPeriod.title)
         periodPopup.target = self
-        periodPopup.action = #selector(positionChartPeriodChanged(_:))
+        periodPopup.action = #selector(watchlistChartPeriodChanged(_:))
         periodPopup.translatesAutoresizingMaskIntoConstraints = false
         periodPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 78).isActive = true
         pane.addSubview(periodPopup)
 
-        let chart = makePositionChart(for: position)
+        let chart = makeWatchlistChart(for: item)
         chart.translatesAutoresizingMaskIntoConstraints = false
         pane.addSubview(chart)
 
-        let summary = makePositionStats(for: position)
+        let summary = makeWatchlistStats(for: item)
         summary.translatesAutoresizingMaskIntoConstraints = false
         pane.addSubview(summary)
 
-        let note = NSTextField(labelWithString: "折线显示该股票的行情价格；持仓市值和浮盈/浮亏按当前报价计算。")
+        let noteText = item.isHeld
+            ? "折线显示该股票的行情价格；持仓市值和浮盈/浮亏按当前报价计算。"
+            : "折线显示该股票的行情价格；记录买入后，这里会显示持仓市值和浮盈/浮亏。"
+        let note = NSTextField(labelWithString: noteText)
         note.font = appFont(ofSize: 11, weight: .regular)
         note.textColor = PortfolioTheme.mutedText
         note.translatesAutoresizingMaskIntoConstraints = false
@@ -870,11 +933,14 @@ final class PortfolioMainViewController: NSViewController {
         return pane
     }
 
-    private func makeEmptyPositionDetailPane() -> NSView {
+    private func makeEmptyWatchlistDetailPane() -> NSView {
         let pane = NSView()
         pane.wantsLayer = true
         pane.layer?.backgroundColor = PortfolioTheme.pageBackground.cgColor
-        let label = NSTextField(wrappingLabelWithString: "选择左侧持仓，查看行情折线和持仓分析。")
+        let message = watchlistFilter == .held
+            ? "当前没有持仓。记录买入后，可在这里查看持仓分析。"
+            : "请先在悬浮窗中添加自选标的。"
+        let label = NSTextField(wrappingLabelWithString: message)
         label.font = appFont(ofSize: 14, weight: .medium)
         label.textColor = PortfolioTheme.tertiaryText
         label.alignment = .center
@@ -889,16 +955,16 @@ final class PortfolioMainViewController: NSViewController {
         return pane
     }
 
-    private func makePositionChart(for position: PortfolioPosition) -> NSView {
+    private func makeWatchlistChart(for item: WatchlistItem) -> NSView {
         let container = NSView()
-        let state = positionChartStates[chartStateKey(for: position.assetID)]
+        let state = positionChartStates[chartStateKey(for: item.assetID)]
 
         if case let .loaded(points) = state, points.count > 1 {
             let chart = StockChartView()
             chart.points = points
-            chart.previousClose = displayAssets.first(where: { $0.id == position.assetID })?.previousClose
+            chart.previousClose = item.previousClose
             chart.colorMode = .redFallGreenRise
-            chart.currencyCode = position.currency
+            chart.currencyCode = item.currency ?? ""
             chart.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(chart)
             NSLayoutConstraint.activate([
@@ -935,16 +1001,8 @@ final class PortfolioMainViewController: NSViewController {
         return container
     }
 
-    private func makePositionStats(for position: PortfolioPosition) -> NSView {
-        let currentPrice = position.currentPrice.map {
-            formatCurrencyWithCode($0, currencyCode: position.currency, compact: false)
-        } ?? "--"
-        let marketValue = position.marketValue.map {
-            formatCurrencyWithCode($0, currencyCode: position.currency, compact: false)
-        } ?? "--"
-        let pnl = position.unrealizedPnl.map {
-            formatSignedCurrencyWithCode($0, currencyCode: position.currency, compact: false)
-        } ?? "--"
+    private func makeWatchlistStats(for item: WatchlistItem) -> NSView {
+        let currentPrice = formattedWatchlistPrice(item, compact: false)
 
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -952,12 +1010,27 @@ final class PortfolioMainViewController: NSViewController {
         stack.distribution = .fillEqually
         stack.spacing = 8
         stack.addArrangedSubview(positionStatCard(title: "现价", value: currentPrice, color: PortfolioTheme.primaryText))
-        stack.addArrangedSubview(positionStatCard(title: "持仓市值", value: marketValue, color: PortfolioTheme.primaryText))
-        stack.addArrangedSubview(positionStatCard(
-            title: "浮盈 / 浮亏",
-            value: pnl,
-            color: position.unrealizedPnl.map { $0 >= 0 ? NSColor.systemGreen : NSColor.systemRed } ?? PortfolioTheme.tertiaryText
-        ))
+        if let position = item.position, item.isHeld {
+            let marketValue = position.marketValue.map {
+                formatCurrencyWithCode($0, currencyCode: position.currency, compact: false)
+            } ?? "--"
+            let pnl = position.unrealizedPnl.map {
+                formatSignedCurrencyWithCode($0, currencyCode: position.currency, compact: false)
+            } ?? "--"
+            stack.addArrangedSubview(positionStatCard(title: "持仓市值", value: marketValue, color: PortfolioTheme.primaryText))
+            stack.addArrangedSubview(positionStatCard(
+                title: "浮盈 / 浮亏",
+                value: pnl,
+                color: position.unrealizedPnl.map { $0 >= 0 ? NSColor.systemGreen : NSColor.systemRed } ?? PortfolioTheme.tertiaryText
+            ))
+        } else {
+            stack.addArrangedSubview(positionStatCard(
+                title: "涨跌幅",
+                value: formattedWatchlistChange(item),
+                color: watchlistChangeColor(item)
+            ))
+            stack.addArrangedSubview(positionStatCard(title: "状态", value: "未持仓", color: PortfolioTheme.tertiaryText))
+        }
         return stack
     }
 
@@ -994,18 +1067,78 @@ final class PortfolioMainViewController: NSViewController {
         return card
     }
 
-    private func chartStateKey(for assetID: String) -> String {
-        "\(assetID)|\(positionChartPeriod.rawValue)"
+    private func watchlistItems() -> [WatchlistItem] {
+        let displayByID = Dictionary(uniqueKeysWithValues: displayAssets.map { ($0.id, $0) })
+        let heldPositionsByID = Dictionary(uniqueKeysWithValues: summary.positions
+            .filter { $0.quantity > 0 }
+            .map { ($0.assetID, $0) })
+
+        return trackedAssets.map { asset in
+            let assetID = assetIdentity(for: asset)
+            let display = displayByID[assetID]
+            let position = heldPositionsByID[assetID]
+            return WatchlistItem(
+                assetID: assetID,
+                name: display?.name ?? asset.name,
+                symbol: display?.symbol ?? asset.symbol,
+                currency: display?.currency ?? position?.currency,
+                currentPrice: display?.currentPrice ?? position?.currentPrice,
+                previousClose: display?.previousClose,
+                changePercent: display?.changePercent,
+                errorMessage: display?.errorMessage,
+                position: position
+            )
+        }
     }
 
-    private func requestSelectedPositionChartIfNeeded() {
-        guard let selectedPositionID,
-              positionChartPeriod != .off else { return }
-        let key = chartStateKey(for: selectedPositionID)
+    private func filteredWatchlistItems() -> [WatchlistItem] {
+        let items = watchlistItems()
+        return watchlistFilter == .held ? items.filter(\.isHeld) : items
+    }
+
+    private func normalizeWatchlistSelection() {
+        let items = filteredWatchlistItems()
+        guard let selectedWatchlistAssetID,
+              items.contains(where: { $0.assetID == selectedWatchlistAssetID }) else {
+            self.selectedWatchlistAssetID = items.first?.assetID
+            requestedWatchlistChartKey = nil
+            return
+        }
+    }
+
+    private func formattedWatchlistPrice(_ item: WatchlistItem, compact: Bool) -> String {
+        guard let price = item.currentPrice else { return item.errorMessage == nil ? "--" : "加载失败" }
+        guard let currency = item.currency, !currency.isEmpty else {
+            return formatNumber(price, minFraction: 0, maxFraction: 6)
+        }
+        return formatCurrencyWithCode(price, currencyCode: currency, compact: compact)
+    }
+
+    private func formattedWatchlistChange(_ item: WatchlistItem) -> String {
+        guard let changePercent = item.changePercent else { return item.errorMessage == nil ? "--" : "加载失败" }
+        let prefix = changePercent > 0 ? "+" : ""
+        return "\(prefix)\(formatNumber(changePercent, minFraction: 0, maxFraction: 2))%"
+    }
+
+    private func watchlistChangeColor(_ item: WatchlistItem) -> NSColor {
+        guard let changePercent = item.changePercent else { return PortfolioTheme.tertiaryText }
+        if changePercent > 0 { return .systemGreen }
+        if changePercent < 0 { return .systemRed }
+        return PortfolioTheme.tertiaryText
+    }
+
+    private func chartStateKey(for assetID: String) -> String {
+        "\(assetID)|\(watchlistChartPeriod.rawValue)"
+    }
+
+    private func requestSelectedWatchlistChartIfNeeded() {
+        guard let selectedWatchlistAssetID,
+              watchlistChartPeriod != .off else { return }
+        let key = chartStateKey(for: selectedWatchlistAssetID)
         guard positionChartStates[key] == nil,
-              requestedPositionChartKey != key else { return }
-        requestedPositionChartKey = key
-        onRequestPositionChart?(selectedPositionID, positionChartPeriod)
+              requestedWatchlistChartKey != key else { return }
+        requestedWatchlistChartKey = key
+        onRequestPositionChart?(selectedWatchlistAssetID, watchlistChartPeriod)
     }
 
     private func buildTransactions(in body: NSView) {
@@ -1320,18 +1453,25 @@ final class PortfolioMainViewController: NSViewController {
         renderContent()
     }
 
-    @objc private func positionListRowClicked(_ sender: NSButton) {
+    @objc private func watchlistRowClicked(_ sender: NSButton) {
         guard let assetID = sender.identifier?.rawValue else { return }
-        selectedPositionID = assetID
-        requestedPositionChartKey = nil
+        selectedWatchlistAssetID = assetID
+        requestedWatchlistChartKey = nil
         renderContent()
     }
 
-    @objc private func positionChartPeriodChanged(_ sender: NSPopUpButton) {
+    @objc private func watchlistFilterChanged(_ sender: NSSegmentedControl) {
+        guard let filter = WatchlistFilter(rawValue: sender.selectedSegment) else { return }
+        watchlistFilter = filter
+        normalizeWatchlistSelection()
+        renderContent()
+    }
+
+    @objc private func watchlistChartPeriodChanged(_ sender: NSPopUpButton) {
         let periods: [StockChartPeriod] = [.day, .week, .month, .year]
         guard periods.indices.contains(sender.indexOfSelectedItem) else { return }
-        positionChartPeriod = periods[sender.indexOfSelectedItem]
-        requestedPositionChartKey = nil
+        watchlistChartPeriod = periods[sender.indexOfSelectedItem]
+        requestedWatchlistChartKey = nil
         renderContent()
     }
 
