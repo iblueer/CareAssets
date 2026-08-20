@@ -292,37 +292,12 @@ final class PortfolioStore {
         }
     }
 
-    func replaceOpeningPosition(asset: TrackedAsset, quantity: Double?, averagePrice: Double?) throws {
-        let id = assetIdentity(for: asset)
-        try perform("DELETE FROM transactions WHERE kind = 'opening' AND asset_id = ?") { statement in
-            bind(statement, index: 1, value: id)
-        }
-        guard let quantity, let averagePrice, quantity > 0, averagePrice > 0 else { return }
-        let transaction = PortfolioTransaction(
-            id: UUID(),
-            occurredAt: Date(),
-            kind: .opening,
-            assetID: id,
-            assetName: asset.name,
-            symbol: asset.symbol,
-            assetType: asset.type,
-            currency: "",
-            quantity: quantity,
-            unitPrice: averagePrice,
-            amount: quantity * averagePrice,
-            fee: 0,
-            tax: 0,
-            note: ""
-        )
-        try insert(transaction)
-    }
-
     func migrateLegacyPositions(from assets: [TrackedAsset]) {
         guard !hasMetadata("legacy_positions_migrated") else { return }
         do {
             for asset in assets {
-                guard let quantity = asset.holdingQuantity,
-                      let averagePrice = asset.averageBuyPrice,
+                guard let quantity = asset.legacyHoldingQuantity,
+                      let averagePrice = asset.legacyAverageBuyPrice,
                       quantity > 0,
                       averagePrice > 0 else { continue }
                 let transaction = PortfolioTransaction(

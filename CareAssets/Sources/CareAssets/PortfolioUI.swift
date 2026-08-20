@@ -311,6 +311,7 @@ final class PortfolioMainViewController: NSViewController {
         case overview = "总览"
         case watchlist = "自选"
         case transactions = "交易记录"
+        case settings = "设置"
     }
 
     private enum WatchlistFilter: Int {
@@ -335,6 +336,7 @@ final class PortfolioMainViewController: NSViewController {
         var changePercent: Double?
         var errorMessage: String?
         var position: PortfolioPosition?
+        var visibleInMenuBar: Bool
 
         var isHeld: Bool {
             (position?.quantity ?? 0) > 0
@@ -346,6 +348,19 @@ final class PortfolioMainViewController: NSViewController {
     var onDeleteTransaction: ((UUID) -> Void)?
     var onRefresh: (() -> Void)?
     var onRequestPositionChart: ((String, StockChartPeriod) -> Void)?
+    var onSearchWatchlistAssets: ((String) -> Void)?
+    var onAddWatchlistAsset: ((AssetSearchResult) -> Void)?
+    var onRemoveWatchlistAsset: ((String) -> Void)?
+    var onMenuBarVisibilityChange: ((String, Bool) -> Void)?
+    var onMoveWatchlistAsset: ((String, String, Bool) -> Void)?
+    var onPriceColorModeChange: ((PriceColorMode) -> Void)?
+    var onStatusBarBackgroundModeChange: ((StatusBarBackgroundMode) -> Void)?
+    var onStockDataSourceChange: ((StockDataSource) -> Void)?
+    var onStockChartPeriodChange: ((StockChartPeriod) -> Void)?
+    var onShowPositionSummaryChange: ((Bool) -> Void)?
+    var onICloudDriveSyncChange: ((Bool) -> Void)?
+    var onLanguageChange: ((AppLanguage) -> Void)?
+    var onLaunchAtLoginChange: ((Bool) -> Void)?
 
     private var section: Section = .overview
     private var trackedAssets: [TrackedAsset] = []
@@ -358,6 +373,20 @@ final class PortfolioMainViewController: NSViewController {
     private var watchlistChartPeriod: StockChartPeriod = .month
     private var requestedWatchlistChartKey: String?
     private var watchlistFilter: WatchlistFilter = .all
+    private var isEditingWatchlist = false
+    private var isAddingWatchlistAsset = false
+    private var isSearchingWatchlist = false
+    private var watchlistSearchResults: [AssetSearchResult] = []
+    private var watchlistSearchMessage: String?
+    private weak var watchlistSearchField: NSSearchField?
+    private var priceColorMode: PriceColorMode = .redFallGreenRise
+    private var statusBarBackgroundMode: StatusBarBackgroundMode = .dark
+    private var stockDataSource: StockDataSource = .tencent
+    private var stockChartPeriod: StockChartPeriod = .day
+    private var showPositionSummary = true
+    private var iCloudDriveSyncEnabled = false
+    private var language: AppLanguage = .system
+    private var launchAtLoginEnabled = false
     private var selectedMetric: PortfolioChartMetric = .marketValue
     private var selectedCurrency = ""
     private var sectionButtons: [Section: NSButton] = [:]
@@ -378,7 +407,15 @@ final class PortfolioMainViewController: NSViewController {
         summary: PortfolioSummary,
         transactions: [PortfolioTransaction],
         snapshots: [PortfolioSnapshot],
-        positionChartStates: [String: StockChartState]
+        positionChartStates: [String: StockChartState],
+        priceColorMode: PriceColorMode,
+        statusBarBackgroundMode: StatusBarBackgroundMode,
+        stockDataSource: StockDataSource,
+        stockChartPeriod: StockChartPeriod,
+        showPositionSummary: Bool,
+        iCloudDriveSyncEnabled: Bool,
+        language: AppLanguage,
+        launchAtLoginEnabled: Bool
     ) {
         self.trackedAssets = trackedAssets
         self.displayAssets = displayAssets
@@ -386,11 +423,28 @@ final class PortfolioMainViewController: NSViewController {
         self.transactions = transactions
         self.snapshots = snapshots
         self.positionChartStates = positionChartStates
+        self.priceColorMode = priceColorMode
+        self.statusBarBackgroundMode = statusBarBackgroundMode
+        self.stockDataSource = stockDataSource
+        self.stockChartPeriod = stockChartPeriod
+        self.showPositionSummary = showPositionSummary
+        self.iCloudDriveSyncEnabled = iCloudDriveSyncEnabled
+        self.language = language
+        self.launchAtLoginEnabled = launchAtLoginEnabled
         normalizeWatchlistSelection()
         if selectedCurrency.isEmpty || summary.currencies[selectedCurrency] == nil {
             selectedCurrency = summary.primaryCurrency ?? ""
         }
         if isViewLoaded {
+            renderContent()
+        }
+    }
+
+    func updateWatchlistSearch(results: [AssetSearchResult], isSearching: Bool, message: String?) {
+        self.watchlistSearchResults = results
+        self.isSearchingWatchlist = isSearching
+        self.watchlistSearchMessage = message
+        if isViewLoaded, section == .watchlist, isAddingWatchlistAsset {
             renderContent()
         }
     }
@@ -446,7 +500,7 @@ final class PortfolioMainViewController: NSViewController {
         menu.spacing = 5
         menu.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(menu)
-        for item in [Section.overview, .watchlist, .transactions] {
+        for item in [Section.overview, .watchlist, .transactions, .settings] {
             let button = NSButton(title: item.rawValue, target: self, action: #selector(sectionClicked(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(item.rawValue)
             button.alignment = .left
@@ -518,6 +572,7 @@ final class PortfolioMainViewController: NSViewController {
         switch sender.identifier?.rawValue {
         case Section.watchlist.rawValue: section = .watchlist
         case Section.transactions.rawValue: section = .transactions
+        case Section.settings.rawValue: section = .settings
         default: section = .overview
         }
         updateSectionButtonStyles()
@@ -573,15 +628,34 @@ final class PortfolioMainViewController: NSViewController {
         add.widthAnchor.constraint(equalToConstant: 100).isActive = true
         add.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
+        let addWatchlist = NSButton(title: "+ 添加自选", target: self, action: #selector(addWatchlistClicked(_:)))
+        addWatchlist.isBordered = false
+        addWatchlist.focusRingType = .none
+        addWatchlist.font = appFont(ofSize: 12, weight: .semibold)
+        addWatchlist.contentTintColor = PortfolioTheme.secondaryText
+        addWatchlist.wantsLayer = true
+        addWatchlist.layer?.cornerRadius = 8
+        addWatchlist.layer?.backgroundColor = PortfolioTheme.secondaryActionFill.cgColor
+        addWatchlist.layer?.borderColor = PortfolioTheme.actionBorder.cgColor
+        addWatchlist.layer?.borderWidth = 1
+        addWatchlist.translatesAutoresizingMaskIntoConstraints = false
+        addWatchlist.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        addWatchlist.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         headerStack.addArrangedSubview(title)
         headerStack.addArrangedSubview(spacer)
-        if section != .transactions {
+        if section != .transactions && section != .settings {
             headerStack.addArrangedSubview(refresh)
         }
-        headerStack.addArrangedSubview(add)
+        if section == .watchlist {
+            headerStack.addArrangedSubview(addWatchlist)
+        }
+        if section != .settings {
+            headerStack.addArrangedSubview(add)
+        }
 
         let body = NSView()
         body.translatesAutoresizingMaskIntoConstraints = false
@@ -608,6 +682,8 @@ final class PortfolioMainViewController: NSViewController {
             buildWatchlist(in: body)
         case .transactions:
             buildTransactions(in: body)
+        case .settings:
+            buildSettings(in: body)
         }
     }
 
@@ -643,6 +719,7 @@ final class PortfolioMainViewController: NSViewController {
         cards.addArrangedSubview(metricCard("总资产", selectedSummary?.hasFundingRecords == true ? formatCurrencyWithCode(selectedSummary?.netWorth ?? 0, currencyCode: currency, compact: true) : "需记录入金", selectedSummary?.hasFundingRecords == true ? "现金 + 持仓市值" : "仅买卖记录无法还原", .systemPurple))
         cards.heightAnchor.constraint(equalToConstant: 94).isActive = true
         stack.addArrangedSubview(cards)
+        cards.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
         let chartHeader = NSStackView()
         chartHeader.orientation = .horizontal
@@ -684,7 +761,11 @@ final class PortfolioMainViewController: NSViewController {
     }
 
     private func buildWatchlist(in body: NSView) {
-        let items = filteredWatchlistItems()
+        if isAddingWatchlistAsset {
+            buildWatchlistSearch(in: body)
+            return
+        }
+        let items = isEditingWatchlist ? watchlistItems() : filteredWatchlistItems()
         let split = NSSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
@@ -714,6 +795,178 @@ final class PortfolioMainViewController: NSViewController {
         }
     }
 
+    private func buildWatchlistSearch(in body: NSView) {
+        let split = NSSplitView()
+        split.isVertical = true
+        split.dividerStyle = .thin
+        split.translatesAutoresizingMaskIntoConstraints = false
+        body.addSubview(split)
+
+        let listPane = makeWatchlistSearchPane()
+        split.addArrangedSubview(listPane)
+        listPane.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        listPane.setContentHuggingPriority(.required, for: .horizontal)
+        listPane.setContentCompressionResistancePriority(.required, for: .horizontal)
+        split.addArrangedSubview(makeWatchlistSearchDetailPane())
+
+        NSLayoutConstraint.activate([
+            split.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            split.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            split.topAnchor.constraint(equalTo: body.topAnchor),
+            split.bottomAnchor.constraint(equalTo: body.bottomAnchor)
+        ])
+    }
+
+    private func makeWatchlistSearchPane() -> NSView {
+        let pane = NSView()
+        pane.wantsLayer = true
+        pane.layer?.backgroundColor = PortfolioTheme.sidebarBackground.cgColor
+
+        let title = NSTextField(labelWithString: "添加自选")
+        title.font = appFont(ofSize: 14, weight: .bold)
+        title.textColor = .white
+        title.translatesAutoresizingMaskIntoConstraints = false
+        pane.addSubview(title)
+
+        let done = NSButton(title: "完成", target: self, action: #selector(finishAddingWatchlistClicked(_:)))
+        done.isBordered = false
+        done.focusRingType = .none
+        done.font = appFont(ofSize: 12, weight: .semibold)
+        done.contentTintColor = PortfolioTheme.secondaryText
+        done.wantsLayer = true
+        done.layer?.cornerRadius = 6
+        done.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        done.translatesAutoresizingMaskIntoConstraints = false
+        pane.addSubview(done)
+
+        let searchField = NSSearchField()
+        searchField.placeholderString = "搜索代码、公司或币种"
+        searchField.font = appFont(ofSize: 13, weight: .regular)
+        searchField.target = self
+        searchField.action = #selector(watchlistSearchSubmitted(_:))
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        watchlistSearchField = searchField
+        pane.addSubview(searchField)
+
+        let search = NSButton(title: "搜索", target: self, action: #selector(watchlistSearchSubmitted(_:)))
+        search.isBordered = false
+        search.focusRingType = .none
+        search.font = appFont(ofSize: 12, weight: .semibold)
+        search.contentTintColor = PortfolioTheme.primaryText
+        search.wantsLayer = true
+        search.layer?.cornerRadius = 6
+        search.layer?.backgroundColor = PortfolioTheme.primaryActionFill.cgColor
+        search.translatesAutoresizingMaskIntoConstraints = false
+        pane.addSubview(search)
+
+        let scroll = makeScrollView()
+        pane.addSubview(scroll)
+        let list = verticalStack()
+        list.spacing = 7
+        let document = FlippedDocumentView()
+        document.addSubview(list)
+        scroll.documentView = document
+        document.translatesAutoresizingMaskIntoConstraints = false
+
+        if isSearchingWatchlist {
+            list.addArrangedSubview(watchlistSearchMessageRow("正在搜索…"))
+        } else if let watchlistSearchMessage {
+            list.addArrangedSubview(watchlistSearchMessageRow(watchlistSearchMessage))
+        } else if watchlistSearchResults.isEmpty {
+            list.addArrangedSubview(watchlistSearchMessageRow("输入关键词后搜索，再点击结果添加到自选。"))
+        } else {
+            for result in watchlistSearchResults {
+                let row = makeWatchlistSearchResultRow(result)
+                list.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
+            }
+        }
+
+        NSLayoutConstraint.activate([
+            title.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+            title.topAnchor.constraint(equalTo: pane.topAnchor, constant: 16),
+            done.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -10),
+            done.centerYAnchor.constraint(equalTo: title.centerYAnchor),
+            done.widthAnchor.constraint(equalToConstant: 54),
+            done.heightAnchor.constraint(equalToConstant: 28),
+            searchField.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: search.leadingAnchor, constant: -8),
+            searchField.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 12),
+            searchField.heightAnchor.constraint(equalToConstant: 30),
+            search.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -10),
+            search.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
+            search.widthAnchor.constraint(equalToConstant: 54),
+            search.heightAnchor.constraint(equalToConstant: 30),
+            scroll.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -10),
+            scroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
+            scroll.bottomAnchor.constraint(equalTo: pane.bottomAnchor, constant: -10),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            list.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            list.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            list.topAnchor.constraint(equalTo: document.topAnchor),
+            list.bottomAnchor.constraint(equalTo: document.bottomAnchor)
+        ])
+        return pane
+    }
+
+    private func watchlistSearchMessageRow(_ text: String) -> NSView {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = appFont(ofSize: 12, weight: .medium)
+        label.textColor = PortfolioTheme.tertiaryText
+        label.alignment = .center
+        label.heightAnchor.constraint(equalToConstant: 90).isActive = true
+        return label
+    }
+
+    private func makeWatchlistSearchResultRow(_ result: AssetSearchResult) -> NSButton {
+        let isTracked = trackedAssets.contains { assetIdentity(for: $0) == result.id }
+        let button = NSButton(title: "", target: self, action: #selector(watchlistSearchResultClicked(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier(result.id)
+        button.isBordered = false
+        button.focusRingType = .none
+        button.alignment = .left
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 8
+        button.layer?.backgroundColor = PortfolioTheme.raisedSurface.cgColor
+        button.layer?.borderColor = PortfolioTheme.surfaceBorder.cgColor
+        button.layer?.borderWidth = 1
+        button.heightAnchor.constraint(equalToConstant: 64).isActive = true
+        let paragraph = PortfolioTheme.leftAlignedParagraph(inset: 12, lineSpacing: 1)
+        let title = NSMutableAttributedString(string: "\(result.name)  \(result.symbol)\n", attributes: [
+            .font: appFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: PortfolioTheme.primaryText,
+            .paragraphStyle: paragraph
+        ])
+        title.append(NSAttributedString(string: isTracked ? "已在自选中" : "\(result.source) · 点击添加", attributes: [
+            .font: appFont(ofSize: 11, weight: .regular),
+            .foregroundColor: isTracked ? PortfolioTheme.mutedText : PortfolioTheme.tertiaryText,
+            .paragraphStyle: paragraph
+        ]))
+        button.attributedTitle = title
+        button.isEnabled = !isTracked
+        return button
+    }
+
+    private func makeWatchlistSearchDetailPane() -> NSView {
+        let pane = NSView()
+        pane.wantsLayer = true
+        pane.layer?.backgroundColor = PortfolioTheme.pageBackground.cgColor
+        let label = NSTextField(wrappingLabelWithString: "在左侧搜索并添加标的。\n添加后会自动同步到菜单栏悬浮窗和自选列表。")
+        label.font = appFont(ofSize: 14, weight: .medium)
+        label.textColor = PortfolioTheme.tertiaryText
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        pane.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: pane.leadingAnchor, constant: 30),
+            label.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -30),
+            label.centerXAnchor.constraint(equalTo: pane.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: pane.centerYAnchor)
+        ])
+        return pane
+    }
+
     private func makeWatchlistListPane(_ items: [WatchlistItem]) -> NSView {
         let pane = NSView()
         pane.wantsLayer = true
@@ -738,6 +991,24 @@ final class PortfolioMainViewController: NSViewController {
         count.textColor = PortfolioTheme.mutedText
         header.addArrangedSubview(count)
 
+        let headerSpacer = NSView()
+        headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        header.addArrangedSubview(headerSpacer)
+
+        let edit = NSButton(title: isEditingWatchlist ? "完成" : "编辑", target: self, action: #selector(watchlistEditingClicked(_:)))
+        edit.isBordered = false
+        edit.focusRingType = .none
+        edit.font = appFont(ofSize: 11, weight: .semibold)
+        edit.contentTintColor = isEditingWatchlist ? PortfolioTheme.primaryText : PortfolioTheme.secondaryText
+        edit.wantsLayer = true
+        edit.layer?.cornerRadius = 6
+        edit.layer?.backgroundColor = (isEditingWatchlist ? PortfolioTheme.primaryActionFill : PortfolioTheme.secondaryActionFill).cgColor
+        edit.layer?.borderColor = PortfolioTheme.actionBorder.cgColor
+        edit.layer?.borderWidth = 1
+        edit.widthAnchor.constraint(equalToConstant: 46).isActive = true
+        edit.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        header.addArrangedSubview(edit)
+
         let filter = NSSegmentedControl(
             labels: [WatchlistFilter.all.title, WatchlistFilter.held.title],
             trackingMode: .selectOne,
@@ -747,6 +1018,7 @@ final class PortfolioMainViewController: NSViewController {
         filter.selectedSegment = watchlistFilter.rawValue
         filter.controlSize = .small
         filter.font = appFont(ofSize: 11, weight: .medium)
+        filter.isEnabled = !isEditingWatchlist
         filter.translatesAutoresizingMaskIntoConstraints = false
         pane.addSubview(filter)
 
@@ -760,7 +1032,7 @@ final class PortfolioMainViewController: NSViewController {
         document.translatesAutoresizingMaskIntoConstraints = false
 
         for item in items {
-            let row = makeWatchlistListRow(item)
+            let row: NSView = isEditingWatchlist ? makeWatchlistEditRow(item) : makeWatchlistListRow(item)
             list.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
         }
@@ -862,6 +1134,65 @@ final class PortfolioMainViewController: NSViewController {
         return button
     }
 
+    private func makeWatchlistEditRow(_ item: WatchlistItem) -> NSView {
+        let row = AssetReorderRowView(assetID: item.assetID)
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        row.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
+        row.wantsLayer = true
+        row.layer?.cornerRadius = 8
+        row.layer?.backgroundColor = PortfolioTheme.raisedSurface.cgColor
+        row.layer?.borderColor = PortfolioTheme.surfaceBorder.cgColor
+        row.layer?.borderWidth = 1
+        row.heightAnchor.constraint(equalToConstant: 60).isActive = true
+        row.onMoveAsset = { [weak self] sourceID, targetID, placeAfterTarget in
+            self?.onMoveWatchlistAsset?(sourceID, targetID, placeAfterTarget)
+        }
+
+        let handle = NSTextField(labelWithString: "⋮⋮")
+        handle.font = appFont(ofSize: 15, weight: .bold)
+        handle.textColor = PortfolioTheme.mutedText
+        handle.alignment = .center
+        handle.toolTip = "拖动排序"
+        handle.widthAnchor.constraint(equalToConstant: 14).isActive = true
+
+        let text = NSStackView()
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 3
+        let title = NSTextField(labelWithString: "\(item.name)  \(item.symbol)")
+        title.font = appFont(ofSize: 12, weight: .semibold)
+        title.textColor = PortfolioTheme.primaryText
+        title.alignment = .left
+        let detail = NSTextField(labelWithString: "拖动调整自选与菜单栏顺序")
+        detail.font = appFont(ofSize: 10, weight: .regular)
+        detail.textColor = PortfolioTheme.tertiaryText
+        detail.alignment = .left
+        text.addArrangedSubview(title)
+        text.addArrangedSubview(detail)
+        title.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
+        detail.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
+        text.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let visible = NSButton(title: "顶部", target: self, action: #selector(watchlistMenuBarVisibilityChanged(_:)))
+        visible.setButtonType(.switch)
+        visible.state = item.visibleInMenuBar ? .on : .off
+        visible.identifier = NSUserInterfaceItemIdentifier(item.assetID)
+        visible.font = appFont(ofSize: 10, weight: .medium)
+        visible.contentTintColor = PortfolioTheme.secondaryText
+        visible.toolTip = "显示在菜单栏"
+        visible.widthAnchor.constraint(equalToConstant: 52).isActive = true
+
+        row.addArrangedSubview(handle)
+        row.addArrangedSubview(text)
+        row.addArrangedSubview(spacer)
+        row.addArrangedSubview(visible)
+        return row
+    }
+
     private func makeWatchlistDetailPane(for item: WatchlistItem) -> NSView {
         let pane = NSView()
         pane.wantsLayer = true
@@ -916,7 +1247,6 @@ final class PortfolioMainViewController: NSViewController {
             title.topAnchor.constraint(equalTo: pane.topAnchor, constant: 18),
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 5),
-            periodPopup.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -22),
             periodPopup.centerYAnchor.constraint(equalTo: title.centerYAnchor),
             chart.leadingAnchor.constraint(equalTo: pane.leadingAnchor, constant: 22),
             chart.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -22),
@@ -930,6 +1260,7 @@ final class PortfolioMainViewController: NSViewController {
             note.trailingAnchor.constraint(equalTo: chart.trailingAnchor),
             note.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 8)
         ])
+        periodPopup.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -22).isActive = true
         return pane
     }
 
@@ -1086,7 +1417,8 @@ final class PortfolioMainViewController: NSViewController {
                 previousClose: display?.previousClose,
                 changePercent: display?.changePercent,
                 errorMessage: display?.errorMessage,
-                position: position
+                position: position,
+                visibleInMenuBar: asset.visibleInMenuBar
             )
         }
     }
@@ -1139,6 +1471,136 @@ final class PortfolioMainViewController: NSViewController {
               requestedWatchlistChartKey != key else { return }
         requestedWatchlistChartKey = key
         onRequestPositionChart?(selectedWatchlistAssetID, watchlistChartPeriod)
+    }
+
+    private func buildSettings(in body: NSView) {
+        let scroll = makeScrollView()
+        body.addSubview(scroll)
+        let stack = verticalStack()
+        stack.spacing = 14
+        let document = FlippedDocumentView()
+        document.addSubview(stack)
+        scroll.documentView = document
+        document.translatesAutoresizingMaskIntoConstraints = false
+
+        let sections = [
+            settingsSection("显示与行情", rows: [
+            settingsPopupRow("价格颜色", "菜单栏和行情走势的涨跌配色", values: PriceColorMode.allCases.map(\.title), selected: priceColorMode.title, identifier: "priceColorMode"),
+            settingsPopupRow("菜单栏背景", "顶栏价格标签的背景样式", values: StatusBarBackgroundMode.allCases.map(\.title), selected: statusBarBackgroundMode.title, identifier: "statusBarBackgroundMode"),
+            settingsPopupRow("股票数据源", "自选与悬浮窗使用的股票行情源", values: StockDataSource.allCases.map(\.title), selected: stockDataSource.title, identifier: "stockDataSource"),
+            settingsPopupRow("悬浮窗折线", "悬浮窗展开股票时的默认周期", values: StockChartPeriod.allCases.map(\.title), selected: stockChartPeriod.title, identifier: "stockChartPeriod")
+            ]),
+            settingsSection("悬浮窗", rows: [
+            settingsToggleRow("显示持仓汇总", "在悬浮窗底部显示持仓盈亏摘要", isOn: showPositionSummary, identifier: "showPositionSummary")
+            ]),
+            settingsSection("同步与应用", rows: [
+            settingsToggleRow("iCloud Drive 同步", "同步自选列表、排序和菜单栏显示状态", isOn: iCloudDriveSyncEnabled, identifier: "iCloudDriveSync"),
+            settingsPopupRow("语言", "应用界面显示语言", values: AppLanguage.allCases.map(\.title), selected: language.title, identifier: "language"),
+            settingsToggleRow("登录时启动", "登录 macOS 后自动打开 CareAssets", isOn: launchAtLoginEnabled, identifier: "launchAtLogin")
+            ])
+        ]
+        for section in sections {
+            stack.addArrangedSubview(section)
+            section.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: body.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: body.bottomAnchor),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: document.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: document.bottomAnchor)
+        ])
+    }
+
+    private func settingsSection(_ title: String, rows: [NSView]) -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .width
+        section.spacing = 8
+
+        let heading = NSTextField(labelWithString: title)
+        heading.font = appFont(ofSize: 14, weight: .bold)
+        heading.textColor = PortfolioTheme.primaryText
+        heading.alignment = .left
+        section.addArrangedSubview(heading)
+        heading.widthAnchor.constraint(equalTo: section.widthAnchor).isActive = true
+
+        let card = NSStackView()
+        card.orientation = .vertical
+        card.alignment = .width
+        card.spacing = 0
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 10
+        card.layer?.backgroundColor = PortfolioTheme.raisedSurface.cgColor
+        card.layer?.borderColor = PortfolioTheme.surfaceBorder.cgColor
+        card.layer?.borderWidth = 1
+        for row in rows {
+            card.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: card.widthAnchor).isActive = true
+        }
+        section.addArrangedSubview(card)
+        return section
+    }
+
+    private func settingsPopupRow(_ title: String, _ detail: String, values: [String], selected: String, identifier: String) -> NSView {
+        let popup = NSPopUpButton()
+        popup.addItems(withTitles: values)
+        popup.selectItem(withTitle: selected)
+        popup.target = self
+        popup.action = #selector(settingsPopupChanged(_:))
+        popup.identifier = NSUserInterfaceItemIdentifier(identifier)
+        popup.font = appFont(ofSize: 12, weight: .medium)
+        popup.widthAnchor.constraint(equalToConstant: 150).isActive = true
+        return settingsRow(title, detail, control: popup)
+    }
+
+    private func settingsToggleRow(_ title: String, _ detail: String, isOn: Bool, identifier: String) -> NSView {
+        let toggle = NSButton(title: "", target: self, action: #selector(settingsToggleChanged(_:)))
+        toggle.setButtonType(.switch)
+        toggle.state = isOn ? .on : .off
+        toggle.identifier = NSUserInterfaceItemIdentifier(identifier)
+        toggle.widthAnchor.constraint(equalToConstant: 38).isActive = true
+        return settingsRow(title, detail, control: toggle)
+    }
+
+    private func settingsRow(_ title: String, _ detail: String, control: NSView) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 16
+        row.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 14)
+        row.heightAnchor.constraint(equalToConstant: 64).isActive = true
+
+        let text = NSStackView()
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 3
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = appFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = PortfolioTheme.primaryText
+        titleLabel.alignment = .left
+        let detailLabel = NSTextField(labelWithString: detail)
+        detailLabel.font = appFont(ofSize: 11, weight: .regular)
+        detailLabel.textColor = PortfolioTheme.tertiaryText
+        detailLabel.alignment = .left
+        detailLabel.lineBreakMode = .byTruncatingTail
+        text.addArrangedSubview(titleLabel)
+        text.addArrangedSubview(detailLabel)
+        titleLabel.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
+        detailLabel.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
+        text.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        row.addArrangedSubview(text)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        row.addArrangedSubview(spacer)
+        row.addArrangedSubview(control)
+        return row
     }
 
     private func buildTransactions(in body: NSView) {
@@ -1429,6 +1891,44 @@ final class PortfolioMainViewController: NSViewController {
         onAddTransaction?(transaction)
     }
 
+    @objc private func addWatchlistClicked(_ sender: NSButton) {
+        isAddingWatchlistAsset = true
+        isSearchingWatchlist = false
+        watchlistSearchResults = []
+        watchlistSearchMessage = nil
+        renderContent()
+    }
+
+    @objc private func finishAddingWatchlistClicked(_ sender: NSButton) {
+        isAddingWatchlistAsset = false
+        isSearchingWatchlist = false
+        watchlistSearchResults = []
+        watchlistSearchMessage = nil
+        renderContent()
+    }
+
+    @objc private func watchlistSearchSubmitted(_ sender: Any) {
+        let query = watchlistSearchField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !query.isEmpty else {
+            watchlistSearchResults = []
+            watchlistSearchMessage = "请输入关键词后再搜索。"
+            renderContent()
+            return
+        }
+        guard !isSearchingWatchlist else { return }
+        isSearchingWatchlist = true
+        watchlistSearchResults = []
+        watchlistSearchMessage = nil
+        renderContent()
+        onSearchWatchlistAssets?(query)
+    }
+
+    @objc private func watchlistSearchResultClicked(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue,
+              let result = watchlistSearchResults.first(where: { $0.id == id }) else { return }
+        onAddWatchlistAsset?(result)
+    }
+
     @objc private func editTransactionClicked(_ sender: NSButton) {
         guard let id = sender.identifier.flatMap({ UUID(uuidString: $0.rawValue) }),
               let transaction = transactions.first(where: { $0.id == id }),
@@ -1467,12 +1967,64 @@ final class PortfolioMainViewController: NSViewController {
         renderContent()
     }
 
+    @objc private func watchlistEditingClicked(_ sender: NSButton) {
+        isEditingWatchlist.toggle()
+        if isEditingWatchlist {
+            watchlistFilter = .all
+        }
+        normalizeWatchlistSelection()
+        renderContent()
+    }
+
+    @objc private func watchlistMenuBarVisibilityChanged(_ sender: NSButton) {
+        guard let assetID = sender.identifier?.rawValue else { return }
+        onMenuBarVisibilityChange?(assetID, sender.state == .on)
+    }
+
     @objc private func watchlistChartPeriodChanged(_ sender: NSPopUpButton) {
         let periods: [StockChartPeriod] = [.day, .week, .month, .year]
         guard periods.indices.contains(sender.indexOfSelectedItem) else { return }
         watchlistChartPeriod = periods[sender.indexOfSelectedItem]
         requestedWatchlistChartKey = nil
         renderContent()
+    }
+
+    @objc private func removeWatchlistAssetClicked(_ sender: NSButton) {
+        guard let assetID = sender.identifier?.rawValue else { return }
+        onRemoveWatchlistAsset?(assetID)
+    }
+
+    @objc private func settingsPopupChanged(_ sender: NSPopUpButton) {
+        guard let title = sender.titleOfSelectedItem else { return }
+        switch sender.identifier?.rawValue {
+        case "priceColorMode":
+            onPriceColorModeChange?(PriceColorMode.allCases.first(where: { $0.title == title }) ?? priceColorMode)
+        case "statusBarBackgroundMode":
+            onStatusBarBackgroundModeChange?(StatusBarBackgroundMode.allCases.first(where: { $0.title == title }) ?? statusBarBackgroundMode)
+        case "stockDataSource":
+            onStockDataSourceChange?(StockDataSource.allCases.first(where: { $0.title == title }) ?? stockDataSource)
+        case "stockChartPeriod":
+            onStockChartPeriodChange?(StockChartPeriod.allCases.first(where: { $0.title == title }) ?? stockChartPeriod)
+        case "language":
+            onLanguageChange?(AppLanguage.allCases.first(where: { $0.title == title }) ?? language)
+        default:
+            break
+        }
+    }
+
+    @objc private func settingsToggleChanged(_ sender: NSButton) {
+        let isOn = sender.state == .on
+        guard let identifier = sender.identifier?.rawValue else { return }
+        switch identifier {
+        case "showPositionSummary":
+            onShowPositionSummaryChange?(isOn)
+        case "iCloudDriveSync":
+            onICloudDriveSyncChange?(isOn)
+        case "launchAtLogin":
+            onLaunchAtLoginChange?(isOn)
+        default:
+            break
+        }
     }
 
     private func showTransactionEditor(editing: PortfolioTransaction? = nil) -> PortfolioTransaction? {

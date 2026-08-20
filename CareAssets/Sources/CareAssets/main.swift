@@ -168,10 +168,6 @@ enum L10n {
     static var doneEditing: String { text("完成编辑", "Done editing", zhHant: "完成編輯", ja: "編集完了", ar: "إنهاء التحرير", de: "Fertig", fr: "Terminer", ko: "편집 완료", ptPT: "Concluir edição", es: "Terminar edición") }
     static var reorder: String { text("拖动排序", "Drag to reorder", zhHant: "拖曳排序", ja: "ドラッグして並べ替え", ar: "اسحب لإعادة الترتيب", de: "Zum Sortieren ziehen", fr: "Faire glisser pour réorganiser", ko: "드래그하여 순서 변경", ptPT: "Arrastar para reordenar", es: "Arrastrar para reordenar") }
     static var position: String { text("持仓", "Position", zhHant: "持倉", ja: "保有", ar: "المركز", de: "Position", fr: "Position", ko: "보유", ptPT: "Posição", es: "Posición") }
-    static var quantity: String { text("持仓数量", "Quantity", zhHant: "持倉數量", ja: "数量", ar: "الكمية", de: "Menge", fr: "Quantité", ko: "수량", ptPT: "Quantidade", es: "Cantidad") }
-    static var averageBuyPrice: String { text("平均买入价", "Average buy price", zhHant: "平均買入價", ja: "平均取得単価", ar: "متوسط سعر الشراء", de: "Durchschnittskaufpreis", fr: "Prix moyen", ko: "평균 매수가", ptPT: "Preço médio", es: "Precio medio") }
-    static var save: String { text("保存", "Save", zhHant: "儲存", ja: "保存", ar: "حفظ", de: "Speichern", fr: "Enregistrer", ko: "저장", ptPT: "Guardar", es: "Guardar") }
-    static var clear: String { text("清空", "Clear", zhHant: "清空", ja: "クリア", ar: "مسح", de: "Leeren", fr: "Effacer", ko: "비우기", ptPT: "Limpar", es: "Limpiar") }
     static var unrealizedProfit: String { text("浮盈", "Unrealized gain", zhHant: "浮盈", ja: "含み益", ar: "ربح غير محقق", de: "Buchgewinn", fr: "Gain latent", ko: "평가이익", ptPT: "Ganho não realizado", es: "Ganancia no realizada") }
     static var unrealizedLoss: String { text("浮亏", "Unrealized loss", zhHant: "浮虧", ja: "含み損", ar: "خسارة غير محققة", de: "Buchverlust", fr: "Perte latente", ko: "평가손실", ptPT: "Perda não realizada", es: "Pérdida no realizada") }
     static var profitLoss: String { text("盈亏", "P/L", zhHant: "盈虧", ja: "損益", ar: "الربح/الخسارة", de: "G/V", fr: "P/L", ko: "손익", ptPT: "G/P", es: "G/P") }
@@ -237,13 +233,6 @@ enum L10n {
         text("搜索失败：\(message)", "Search failed: \(message)", zhHant: "搜尋失敗：\(message)", ja: "検索失敗：\(message)", ar: "فشل البحث: \(message)", de: "Suche fehlgeschlagen: \(message)", fr: "Recherche échouée : \(message)", ko: "검색 실패: \(message)", ptPT: "Pesquisa falhou: \(message)", es: "Error de búsqueda: \(message)")
     }
 
-    static func editPositionTitle(_ name: String) -> String {
-        text("\(name) 持仓", "\(name) position", zhHant: "\(name) 持倉", ja: "\(name) 保有", ar: "مركز \(name)", de: "\(name) Position", fr: "Position \(name)", ko: "\(name) 보유", ptPT: "Posição \(name)", es: "Posición \(name)")
-    }
-
-    static func invalidPositionInput() -> String {
-        text("持仓数量和平均买入价需要是大于 0 的数字。", "Quantity and average buy price must be numbers greater than 0.", zhHant: "持倉數量和平均買入價需要是大於 0 的數字。")
-    }
 }
 
 enum PriceColorMode: String, Codable, Sendable, CaseIterable {
@@ -429,8 +418,8 @@ struct TrackedAsset: Codable, Sendable {
     var name: String
     var symbol: String
     var canonicalSymbol: String?
-    var holdingQuantity: Double?
-    var averageBuyPrice: Double?
+    var legacyHoldingQuantity: Double?
+    var legacyAverageBuyPrice: Double?
     var visibleInMenuBar: Bool
 
     private enum CodingKeys: String, CodingKey {
@@ -448,16 +437,14 @@ struct TrackedAsset: Codable, Sendable {
         name: String,
         symbol: String,
         canonicalSymbol: String? = nil,
-        holdingQuantity: Double? = nil,
-        averageBuyPrice: Double? = nil,
         visibleInMenuBar: Bool
     ) {
         self.type = type
         self.name = name
         self.symbol = symbol
         self.canonicalSymbol = canonicalSymbol
-        self.holdingQuantity = holdingQuantity
-        self.averageBuyPrice = averageBuyPrice
+        legacyHoldingQuantity = nil
+        legacyAverageBuyPrice = nil
         self.visibleInMenuBar = visibleInMenuBar
     }
 
@@ -467,8 +454,8 @@ struct TrackedAsset: Codable, Sendable {
         name = try container.decode(String.self, forKey: .name)
         symbol = try container.decode(String.self, forKey: .symbol)
         canonicalSymbol = try container.decodeIfPresent(String.self, forKey: .canonicalSymbol)
-        holdingQuantity = try container.decodeIfPresent(Double.self, forKey: .holdingQuantity)
-        averageBuyPrice = try container.decodeIfPresent(Double.self, forKey: .averageBuyPrice)
+        legacyHoldingQuantity = try container.decodeIfPresent(Double.self, forKey: .holdingQuantity)
+        legacyAverageBuyPrice = try container.decodeIfPresent(Double.self, forKey: .averageBuyPrice)
         visibleInMenuBar = try container.decodeIfPresent(Bool.self, forKey: .visibleInMenuBar) ?? false
     }
 
@@ -509,9 +496,9 @@ struct AppConfig: Codable, Sendable {
         syncFolderPath: nil,
         language: .system,
         assets: [
-            TrackedAsset(type: .gold, name: L10n.gold, symbol: "JD_GOLD", canonicalSymbol: "GOLD:JD_GOLD", holdingQuantity: nil, averageBuyPrice: nil, visibleInMenuBar: true),
-            TrackedAsset(type: .crypto, name: "BTC", symbol: "BTCUSDT", canonicalSymbol: "CRYPTO:BTC", holdingQuantity: nil, averageBuyPrice: nil, visibleInMenuBar: true),
-            TrackedAsset(type: .crypto, name: "ETH", symbol: "ETHUSDT", canonicalSymbol: "CRYPTO:ETH", holdingQuantity: nil, averageBuyPrice: nil, visibleInMenuBar: true),
+            TrackedAsset(type: .gold, name: L10n.gold, symbol: "JD_GOLD", canonicalSymbol: "GOLD:JD_GOLD", visibleInMenuBar: true),
+            TrackedAsset(type: .crypto, name: "BTC", symbol: "BTCUSDT", canonicalSymbol: "CRYPTO:BTC", visibleInMenuBar: true),
+            TrackedAsset(type: .crypto, name: "ETH", symbol: "ETHUSDT", canonicalSymbol: "CRYPTO:ETH", visibleInMenuBar: true),
         ]
     )
 
@@ -642,8 +629,8 @@ struct DisplayAsset: Sendable {
             changeText: "--",
             changePercent: nil,
             updatedAt: nil,
-            holdingQuantity: asset.holdingQuantity,
-            averageBuyPrice: asset.averageBuyPrice,
+            holdingQuantity: nil,
+            averageBuyPrice: nil,
             visibleInMenuBar: asset.visibleInMenuBar,
             errorMessage: nil
         )
@@ -662,7 +649,7 @@ struct AssetSearchResult: Sendable, Equatable {
     }
 
     var trackedAsset: TrackedAsset {
-        TrackedAsset(type: type, name: name, symbol: symbol.uppercased(), canonicalSymbol: canonicalSymbol ?? canonicalAssetSymbol(type: type, symbol: symbol), holdingQuantity: nil, averageBuyPrice: nil, visibleInMenuBar: false)
+        TrackedAsset(type: type, name: name, symbol: symbol.uppercased(), canonicalSymbol: canonicalSymbol ?? canonicalAssetSymbol(type: type, symbol: symbol), visibleInMenuBar: false)
     }
 }
 
@@ -1074,8 +1061,8 @@ extension AssetService {
                 changeText: formatChange(amount: changeAmount, percent: percent, currencyPrefix: "¥"),
                 changePercent: percent,
                 updatedAt: parseLocalDateTime(quote.uptime),
-                holdingQuantity: asset.holdingQuantity,
-                averageBuyPrice: asset.averageBuyPrice,
+                holdingQuantity: nil,
+                averageBuyPrice: nil,
                 visibleInMenuBar: asset.visibleInMenuBar,
                 errorMessage: nil
             )
@@ -1143,8 +1130,8 @@ extension AssetService {
                 changeText: formatChange(amount: change, percent: percent, currencyPrefix: "¥"),
                 changePercent: percent,
                 updatedAt: updatedAt,
-                holdingQuantity: asset.holdingQuantity,
-                averageBuyPrice: asset.averageBuyPrice,
+                holdingQuantity: nil,
+                averageBuyPrice: nil,
                 visibleInMenuBar: asset.visibleInMenuBar,
                 errorMessage: nil
             )
@@ -1189,8 +1176,8 @@ extension AssetService {
                 changeText: formatChange(amount: change, percent: percent, currencyPrefix: currencySymbol(for: currency)),
                 changePercent: percent,
                 updatedAt: updatedAt,
-                holdingQuantity: asset.holdingQuantity,
-                averageBuyPrice: asset.averageBuyPrice,
+                holdingQuantity: nil,
+                averageBuyPrice: nil,
                 visibleInMenuBar: asset.visibleInMenuBar,
                 errorMessage: nil
             )
@@ -1274,8 +1261,8 @@ extension AssetService {
                 changeText: formatChange(amount: change, percent: percent, currencyPrefix: ""),
                 changePercent: percent,
                 updatedAt: parseISO8601Date(ticker.time),
-                holdingQuantity: asset.holdingQuantity,
-                averageBuyPrice: asset.averageBuyPrice,
+                holdingQuantity: nil,
+                averageBuyPrice: nil,
                 visibleInMenuBar: asset.visibleInMenuBar,
                 errorMessage: nil
             )
@@ -1552,8 +1539,8 @@ extension AssetService {
                 changeText: formatChange(amount: change, percent: percent, currencyPrefix: currencySymbol(for: quote.currency)),
                 changePercent: percent,
                 updatedAt: quote.updatedAt,
-                holdingQuantity: quote.asset.holdingQuantity,
-                averageBuyPrice: quote.asset.averageBuyPrice,
+                holdingQuantity: nil,
+                averageBuyPrice: nil,
                 visibleInMenuBar: quote.asset.visibleInMenuBar,
                 errorMessage: nil
             )
@@ -2887,7 +2874,6 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     var onToggleVisible: ((String, Bool) -> Void)?
     var onRemoveAsset: ((String) -> Void)?
     var onMoveAsset: ((String, String, Bool) -> Void)?
-    var onEditPosition: ((String) -> Void)?
     var onColorModeChange: ((PriceColorMode) -> Void)?
     var onStatusBarBackgroundModeChange: ((StatusBarBackgroundMode) -> Void)?
     var onStockDataSourceChange: ((StockDataSource) -> Void)?
@@ -3270,30 +3256,13 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         refresh.widthAnchor.constraint(equalToConstant: 62).isActive = true
         refreshStateLabel = refresh
 
-        let settings = NSButton(title: L10n.settings, target: self, action: #selector(settingsClicked(_:)))
-        settings.bezelStyle = .rounded
-        settings.controlSize = .small
-        settings.font = appFont(ofSize: 12, weight: .semibold)
-        settings.widthAnchor.constraint(equalToConstant: headerActionButtonWidth).isActive = true
+        let openMainWindow = NSButton(title: "主窗口", target: self, action: #selector(openMainWindowButtonClicked(_:)))
+        openMainWindow.bezelStyle = .rounded
+        openMainWindow.controlSize = .small
+        openMainWindow.font = appFont(ofSize: 12, weight: .semibold)
+        openMainWindow.widthAnchor.constraint(equalToConstant: 64).isActive = true
 
-        let edit = NSButton(title: isEditingAssets ? L10n.doneEditing : L10n.edit, target: self, action: #selector(toggleAssetEditingClicked(_:)))
-        edit.bezelStyle = .rounded
-        edit.controlSize = .small
-        edit.font = appFont(ofSize: 12, weight: .semibold)
-        if !isEditingAssets {
-            edit.widthAnchor.constraint(equalToConstant: headerActionButtonWidth).isActive = true
-        }
-
-        let add = NSButton(title: L10n.add, target: self, action: #selector(toggleSearchClicked(_:)))
-        add.bezelStyle = .rounded
-        add.controlSize = .small
-        add.font = appFont(ofSize: 12, weight: .semibold)
-        add.widthAnchor.constraint(equalToConstant: headerActionButtonWidth).isActive = true
-
-        let headerViews = isEditingAssets
-            ? [brand, spacer, refresh, edit]
-            : [brand, spacer, refresh, settings, edit, add]
-        addArrangedSubviews(headerViews, to: row)
+        addArrangedSubviews([brand, spacer, refresh, openMainWindow], to: row)
         return row
     }
 
@@ -3419,24 +3388,12 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         remove.toolTip = L10n.remove
         remove.widthAnchor.constraint(equalToConstant: 18).isActive = true
 
-        let position = NSButton(title: "持", target: self, action: #selector(editPositionClicked(_:)))
-        position.bezelStyle = .smallSquare
-        position.controlSize = .small
-        position.font = appFont(ofSize: 10, weight: .semibold)
-        position.identifier = NSUserInterfaceItemIdentifier(asset.id)
-        position.toolTip = L10n.position
-        position.widthAnchor.constraint(equalToConstant: 22).isActive = true
-        position.isHidden = asset.type != .stock
-
         var rowViews: [NSView]
         if isEditingAssets {
             let reorderHandle = makeReorderHandle()
             rowViews = isRTL
                 ? [reorderHandle, makeRTLScrollerGutter(), visible, left, spacer, right]
                 : [reorderHandle, visible, left, spacer, right]
-            if asset.type == .stock {
-                rowViews.append(position)
-            }
             rowViews.append(remove)
         } else {
             rowViews = isRTL
@@ -4152,6 +4109,10 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         }
     }
 
+    @objc private func openMainWindowButtonClicked(_ sender: NSButton) {
+        onOpenMainWindow?()
+    }
+
     @objc private func colorModeMenuItemClicked(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let mode = PriceColorMode(rawValue: rawValue) else { return }
@@ -4266,11 +4227,6 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     @objc private func removeAssetClicked(_ sender: NSButton) {
         guard let id = sender.identifier?.rawValue else { return }
         onRemoveAsset?(id)
-    }
-
-    @objc private func editPositionClicked(_ sender: NSButton) {
-        guard let id = sender.identifier?.rawValue else { return }
-        onEditPosition?(id)
     }
 
     @objc private func quitClicked() {
@@ -4721,13 +4677,6 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
-    private enum PositionEditResult {
-        case save(quantity: Double, averageBuyPrice: Double)
-        case clear
-        case cancel
-        case invalid
-    }
-
     private enum InitialAssetSyncDirection: Equatable {
         case localToICloud
         case iCloudToLocal
@@ -4748,6 +4697,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var portfolioTransactions: [PortfolioTransaction] = []
     private var portfolioSummary = PortfolioSummary.empty
     private var mainWindowChartStates: [String: StockChartState] = [:]
+    private var mainWindowSearchRequestID = 0
     private var timer: Timer?
     private var secondsUntilRefresh = 0
     private var isRefreshing = false
@@ -4894,9 +4844,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         panelViewController.onMoveAsset = { [weak self] sourceID, targetID, placeAfterTarget in
             self?.moveAsset(id: sourceID, to: targetID, placeAfterTarget: placeAfterTarget)
-        }
-        panelViewController.onEditPosition = { [weak self] id in
-            self?.editPosition(id: id)
         }
         panelViewController.onColorModeChange = { [weak self] mode in
             self?.setPriceColorMode(mode)
@@ -5089,10 +5036,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 let fetchedByID = Dictionary(uniqueKeysWithValues: fetchedAssets.map { ($0.id, $0) })
                 self.assets = self.config.assets.map { asset in
                     let id = self.key(for: asset)
-                    var display = fetchedByID[id] ?? self.assets.first(where: { $0.id == id }) ?? DisplayAsset.loading(from: asset)
-                    display.holdingQuantity = asset.holdingQuantity
-                    display.averageBuyPrice = asset.averageBuyPrice
-                    return display
+                    return fetchedByID[id] ?? self.assets.first(where: { $0.id == id }) ?? DisplayAsset.loading(from: asset)
                 }
                 self.reloadPortfolioState()
                 self.portfolioStore.recordSnapshots(summary: self.portfolioSummary)
@@ -5135,11 +5079,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         portfolioSummary = PortfolioCalculator.calculate(transactions: portfolioTransactions, assets: assets)
 
         let positionsByID = Dictionary(uniqueKeysWithValues: portfolioSummary.positions.map { ($0.assetID, $0) })
-        for index in config.assets.indices {
-            let id = key(for: config.assets[index])
-            config.assets[index].holdingQuantity = positionsByID[id]?.quantity
-            config.assets[index].averageBuyPrice = positionsByID[id]?.averageCost
-        }
         for index in assets.indices {
             let position = positionsByID[assets[index].id]
             assets[index].holdingQuantity = position?.quantity
@@ -5155,7 +5094,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             summary: portfolioSummary,
             transactions: portfolioTransactions,
             snapshots: portfolioStore.loadSnapshots(),
-            positionChartStates: mainWindowChartStates
+            positionChartStates: mainWindowChartStates,
+            priceColorMode: config.priceColorMode,
+            statusBarBackgroundMode: config.statusBarBackgroundMode,
+            stockDataSource: config.stockDataSource,
+            stockChartPeriod: config.stockChartPeriod,
+            showPositionSummary: config.showPositionSummary,
+            iCloudDriveSyncEnabled: config.iCloudDriveSyncEnabled,
+            language: config.language,
+            launchAtLoginEnabled: LoginLaunchAgent.isEnabled
         )
     }
 
@@ -5178,6 +5125,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
             controller.portfolioViewController.onRequestPositionChart = { [weak self] assetID, period in
                 self?.requestMainWindowPositionChart(assetID: assetID, period: period)
+            }
+            controller.portfolioViewController.onSearchWatchlistAssets = { [weak self] query in
+                self?.searchMainWindowAssets(query)
+            }
+            controller.portfolioViewController.onAddWatchlistAsset = { [weak self] result in
+                self?.addAsset(result)
+            }
+            controller.portfolioViewController.onRemoveWatchlistAsset = { [weak self] id in
+                self?.removeAsset(id: id)
+            }
+            controller.portfolioViewController.onMenuBarVisibilityChange = { [weak self] id, visible in
+                self?.setAsset(id: id, visibleInMenuBar: visible)
+            }
+            controller.portfolioViewController.onMoveWatchlistAsset = { [weak self] sourceID, targetID, placeAfterTarget in
+                self?.moveAsset(id: sourceID, to: targetID, placeAfterTarget: placeAfterTarget)
+            }
+            controller.portfolioViewController.onPriceColorModeChange = { [weak self] mode in
+                self?.setPriceColorMode(mode)
+            }
+            controller.portfolioViewController.onStatusBarBackgroundModeChange = { [weak self] mode in
+                self?.setStatusBarBackgroundMode(mode)
+            }
+            controller.portfolioViewController.onStockDataSourceChange = { [weak self] source in
+                self?.setStockDataSource(source)
+            }
+            controller.portfolioViewController.onStockChartPeriodChange = { [weak self] period in
+                self?.setStockChartPeriod(period)
+            }
+            controller.portfolioViewController.onShowPositionSummaryChange = { [weak self] visible in
+                self?.setShowPositionSummary(visible)
+            }
+            controller.portfolioViewController.onICloudDriveSyncChange = { [weak self] enabled in
+                self?.setICloudDriveSyncEnabled(enabled)
+            }
+            controller.portfolioViewController.onLanguageChange = { [weak self] language in
+                self?.setLanguage(language)
+            }
+            controller.portfolioViewController.onLaunchAtLoginChange = { [weak self] enabled in
+                self?.setLaunchAtLogin(enabled)
             }
             mainWindowController = controller
         }
@@ -5277,6 +5263,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
+    private func searchMainWindowAssets(_ query: String) {
+        mainWindowSearchRequestID += 1
+        let requestID = mainWindowSearchRequestID
+
+        Task {
+            do {
+                let results = try await service.searchAssets(query: query, stockDataSource: self.config.stockDataSource)
+                await MainActor.run {
+                    guard requestID == self.mainWindowSearchRequestID else { return }
+                    self.mainWindowController?.portfolioViewController.updateWatchlistSearch(
+                        results: results,
+                        isSearching: false,
+                        message: results.isEmpty ? L10n.noSearchResults : nil
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    guard requestID == self.mainWindowSearchRequestID else { return }
+                    self.mainWindowController?.portfolioViewController.updateWatchlistSearch(
+                        results: [],
+                        isSearching: false,
+                        message: L10n.searchFailed(error.localizedDescription)
+                    )
+                }
+            }
+        }
+    }
+
     private func addAsset(_ result: AssetSearchResult) {
         let asset = result.trackedAsset
         let id = key(for: asset)
@@ -5312,103 +5326,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         ConfigStore.write(config)
         writeAssetSyncIfEnabled()
         updateViews()
-    }
-
-    private func editPosition(id: String) {
-        guard let configIndex = config.assets.firstIndex(where: { key(for: $0) == id }),
-              config.assets[configIndex].type == .stock else {
-            return
-        }
-
-        let result = showPositionEditor(for: config.assets[configIndex])
-        switch result {
-        case let .save(quantity, averageBuyPrice):
-            setPosition(id: id, quantity: quantity, averageBuyPrice: averageBuyPrice)
-        case .clear:
-            setPosition(id: id, quantity: nil, averageBuyPrice: nil)
-        case .invalid:
-            showMessageAlert(message: L10n.invalidPositionInput())
-        case .cancel:
-            break
-        }
-    }
-
-    private func setPosition(id: String, quantity: Double?, averageBuyPrice: Double?) {
-        guard let configIndex = config.assets.firstIndex(where: { key(for: $0) == id }) else { return }
-
-        config.assets[configIndex].holdingQuantity = quantity
-        config.assets[configIndex].averageBuyPrice = averageBuyPrice
-        do {
-            try portfolioStore.replaceOpeningPosition(
-                asset: config.assets[configIndex],
-                quantity: quantity,
-                averagePrice: averageBuyPrice
-            )
-        } catch {
-            showMessageAlert(message: "保存持仓失败：\(error.localizedDescription)")
-            return
-        }
-        ConfigStore.write(config)
-        writeAssetSyncIfEnabled()
-        reloadPortfolioState()
-        portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
-        updateViews()
-    }
-
-    private func showPositionEditor(for asset: TrackedAsset) -> PositionEditResult {
-        let alert = NSAlert()
-        alert.messageText = L10n.editPositionTitle(asset.name)
-        alert.informativeText = asset.symbol
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L10n.save)
-        alert.addButton(withTitle: L10n.clear)
-        alert.addButton(withTitle: L10n.cancel)
-
-        let quantityField = NSTextField(string: asset.holdingQuantity.map(positionInputText) ?? "")
-        quantityField.placeholderString = L10n.quantity
-        let averageField = NSTextField(string: asset.averageBuyPrice.map(positionInputText) ?? "")
-        averageField.placeholderString = L10n.averageBuyPrice
-
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.frame = NSRect(x: 0, y: 0, width: 260, height: 62)
-        stack.addArrangedSubview(makePositionInputRow(label: L10n.quantity, field: quantityField))
-        stack.addArrangedSubview(makePositionInputRow(label: L10n.averageBuyPrice, field: averageField))
-        alert.accessoryView = stack
-
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            return .clear
-        }
-        if response != .alertFirstButtonReturn {
-            return .cancel
-        }
-
-        guard let quantity = parsePositiveDecimal(quantityField.stringValue),
-              let averageBuyPrice = parsePositiveDecimal(averageField.stringValue) else {
-            return .invalid
-        }
-        return .save(quantity: quantity, averageBuyPrice: averageBuyPrice)
-    }
-
-    private func makePositionInputRow(label title: String, field: NSTextField) -> NSView {
-        let row = NSStackView()
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 8
-        row.widthAnchor.constraint(equalToConstant: 260).isActive = true
-
-        let label = NSTextField(labelWithString: title)
-        label.font = appFont(ofSize: 12, weight: .medium)
-        label.widthAnchor.constraint(equalToConstant: 92).isActive = true
-
-        field.font = senFont(ofSize: 12)
-        field.widthAnchor.constraint(equalToConstant: 160).isActive = true
-        row.addArrangedSubview(label)
-        row.addArrangedSubview(field)
-        return row
     }
 
     private func showMessageAlert(message: String) {
@@ -5511,6 +5428,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let message = direction == .localToICloud ? L10n.assetSyncWriteFailed : L10n.assetSyncReadFailed
             showMessageAlert(message: message)
             NSLog("CareAssets iCloud Drive sync setup failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try LoginLaunchAgent.setEnabled(enabled)
+            updateMainWindow()
+        } catch {
+            showMessageAlert(message: L10n.launchAtLoginFailed)
+            NSLog("CareAssets launch at login update failed: \(error.localizedDescription)")
+            updateMainWindow()
         }
     }
 
@@ -5618,8 +5546,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             display.name = asset.name
             display.symbol = asset.symbol
             display.canonicalSymbol = asset.canonicalSymbol
-            display.holdingQuantity = asset.holdingQuantity
-            display.averageBuyPrice = asset.averageBuyPrice
             display.visibleInMenuBar = asset.visibleInMenuBar
             return display
         }
@@ -5992,20 +5918,6 @@ private func formatStatusNumber(_ value: Double, minFraction: Int, maxFraction: 
     formatNumber(value, minFraction: minFraction, maxFraction: maxFraction, usesGroupingSeparator: false)
 }
 
-private func positionInputText(_ value: Double) -> String {
-    formatNumber(value, minFraction: 0, maxFraction: 6, usesGroupingSeparator: false)
-}
-
-private func parsePositiveDecimal(_ string: String) -> Double? {
-    let normalized = string
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .replacingOccurrences(of: ",", with: "")
-    guard let value = Double(normalized), value > 0 else {
-        return nil
-    }
-    return value
-}
-
 private func formatCompact(_ value: Double) -> String {
     let absolute = abs(value)
     if absolute >= 1_000_000 {
@@ -6222,8 +6134,8 @@ private func errorAsset(_ asset: TrackedAsset, source: String, message: String) 
         changeText: "--",
         changePercent: nil,
         updatedAt: nil,
-        holdingQuantity: asset.holdingQuantity,
-        averageBuyPrice: asset.averageBuyPrice,
+        holdingQuantity: nil,
+        averageBuyPrice: nil,
         visibleInMenuBar: asset.visibleInMenuBar,
         errorMessage: message
     )
