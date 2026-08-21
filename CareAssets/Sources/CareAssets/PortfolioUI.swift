@@ -374,6 +374,8 @@ final class PortfolioMainViewController: NSViewController {
     private var requestedWatchlistChartKey: String?
     private var watchlistFilter: WatchlistFilter = .all
     private var isEditingWatchlist = false
+    private var watchlistPaneWidth: CGFloat = 240
+    private var watchlistSplitObserver: NSObjectProtocol?
     private var isAddingWatchlistAsset = false
     private var isSearchingWatchlist = false
     private var watchlistSearchResults: [AssetSearchResult] = []
@@ -389,6 +391,8 @@ final class PortfolioMainViewController: NSViewController {
     private var launchAtLoginEnabled = false
     private var selectedMetric: PortfolioChartMetric = .marketValue
     private var selectedCurrency = ""
+    private var transactionEditorAssets: [TrackedAsset] = []
+    private weak var transactionEditorCurrencyField: NSTextField?
     private var sectionButtons: [Section: NSButton] = [:]
     private weak var contentView: NSView?
     private weak var titleLabel: NSTextField?
@@ -399,6 +403,12 @@ final class PortfolioMainViewController: NSViewController {
         root.layer?.backgroundColor = PortfolioTheme.pageBackground.cgColor
         view = root
         buildShell()
+    }
+
+    deinit {
+        if let watchlistSplitObserver {
+            NotificationCenter.default.removeObserver(watchlistSplitObserver)
+        }
     }
 
     func update(
@@ -774,14 +784,20 @@ final class PortfolioMainViewController: NSViewController {
 
         let listPane = makeWatchlistListPane(items)
         split.addArrangedSubview(listPane)
-        listPane.widthAnchor.constraint(equalToConstant: 240).isActive = true
-        listPane.setContentHuggingPriority(.required, for: .horizontal)
-        listPane.setContentCompressionResistancePriority(.required, for: .horizontal)
+        listPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        listPane.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        listPane.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         if let selectedItem = items.first(where: { $0.assetID == selectedWatchlistAssetID }) ?? items.first {
-            split.addArrangedSubview(makeWatchlistDetailPane(for: selectedItem))
+            let detailPane = makeWatchlistDetailPane(for: selectedItem)
+            detailPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
+            split.addArrangedSubview(detailPane)
         } else {
-            split.addArrangedSubview(makeEmptyWatchlistDetailPane())
+            let detailPane = makeEmptyWatchlistDetailPane()
+            detailPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
+            split.addArrangedSubview(detailPane)
         }
+        split.setHoldingPriority(NSLayoutConstraint.Priority(300), forSubviewAt: 0)
+        split.setHoldingPriority(.defaultLow, forSubviewAt: 1)
 
         NSLayoutConstraint.activate([
             split.leadingAnchor.constraint(equalTo: body.leadingAnchor),
@@ -790,8 +806,24 @@ final class PortfolioMainViewController: NSViewController {
             split.bottomAnchor.constraint(equalTo: body.bottomAnchor)
         ])
 
-        DispatchQueue.main.async { [weak self] in
-            self?.requestSelectedWatchlistChartIfNeeded()
+        DispatchQueue.main.async { [weak self, weak split] in
+            guard let self, let split else { return }
+            if let watchlistSplitObserver = self.watchlistSplitObserver {
+                NotificationCenter.default.removeObserver(watchlistSplitObserver)
+            }
+            split.layoutSubtreeIfNeeded()
+            let maximumWidth = max(220, split.bounds.width - 360)
+            split.setPosition(min(max(self.watchlistPaneWidth, 220), maximumWidth), ofDividerAt: 0)
+            split.adjustSubviews()
+            self.watchlistSplitObserver = NotificationCenter.default.addObserver(
+                forName: NSSplitView.didResizeSubviewsNotification,
+                object: split,
+                queue: .main
+            ) { [weak self, weak split] _ in
+                guard let width = split?.subviews.first?.frame.width, width >= 220 else { return }
+                self?.watchlistPaneWidth = width
+            }
+            self.requestSelectedWatchlistChartIfNeeded()
         }
     }
 
@@ -1745,17 +1777,36 @@ final class PortfolioMainViewController: NSViewController {
 
         let left = NSStackView()
         left.orientation = .vertical
+        left.alignment = .leading
         left.spacing = 3
         let title = NSTextField(labelWithString: "\(transaction.kind.title) · \(transaction.assetName.isEmpty ? transaction.currency : transaction.assetName)")
         title.font = appFont(ofSize: 13, weight: .semibold)
         title.textColor = PortfolioTheme.primaryText
-        let detail = NSTextField(labelWithString: "\(DateFormatter.portfolioRow.string(from: transaction.occurredAt)) · \(transaction.symbol)")
+        title.alignment = .left
+        title.lineBreakMode = .byTruncatingTail
+        let detail = NSTextField(labelWithString: DateFormatter.portfolioRow.string(from: transaction.occurredAt))
         detail.font = appFont(ofSize: 11, weight: .regular)
         detail.textColor = PortfolioTheme.tertiaryText
+        detail.alignment = .left
         left.addArrangedSubview(title)
         left.addArrangedSubview(detail)
+        title.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
+        detail.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
         left.setContentHuggingPriority(.defaultLow, for: .horizontal)
         row.addArrangedSubview(left)
+
+        if !transaction.symbol.isEmpty {
+            let symbol = NSTextField(labelWithString: transaction.symbol)
+            symbol.font = appFont(ofSize: 11, weight: .semibold)
+            symbol.textColor = PortfolioTheme.secondaryText
+            symbol.alignment = .center
+            symbol.wantsLayer = true
+            symbol.layer?.cornerRadius = 5
+            symbol.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
+            symbol.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
+            symbol.heightAnchor.constraint(equalToConstant: 22).isActive = true
+            row.addArrangedSubview(symbol)
+        }
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -1891,6 +1942,13 @@ final class PortfolioMainViewController: NSViewController {
         onAddTransaction?(transaction)
     }
 
+    @objc private func transactionEditorAssetChanged(_ sender: NSPopUpButton) {
+        guard transactionEditorAssets.indices.contains(sender.indexOfSelectedItem) else { return }
+        transactionEditorCurrencyField?.stringValue = defaultTransactionCurrency(
+            for: transactionEditorAssets[sender.indexOfSelectedItem]
+        )
+    }
+
     @objc private func addWatchlistClicked(_ sender: NSButton) {
         isAddingWatchlistAsset = true
         isSearchingWatchlist = false
@@ -1939,6 +1997,39 @@ final class PortfolioMainViewController: NSViewController {
     @objc private func deleteTransactionClicked(_ sender: NSButton) {
         guard let id = sender.identifier.flatMap({ UUID(uuidString: $0.rawValue) }) else { return }
         onDeleteTransaction?(id)
+    }
+
+    private func defaultTransactionCurrency(for asset: TrackedAsset) -> String {
+        if let quoteCurrency = displayAssets.first(where: { $0.id == assetIdentity(for: asset) })?.currency?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased(),
+           !quoteCurrency.isEmpty {
+            return quoteCurrency
+        }
+
+        let market = asset.canonicalSymbol?
+            .split(separator: ":", maxSplits: 1)
+            .first?
+            .uppercased()
+        switch market {
+        case "HK": return "HKD"
+        case "US": return "USD"
+        case "SH", "SZ": return "CNY"
+        case "KR": return "KRW"
+        default: break
+        }
+
+        let symbol = asset.symbol.uppercased()
+        if symbol.hasSuffix(".HK") || symbol.range(of: #"^\d{5}$"#, options: .regularExpression) != nil {
+            return "HKD"
+        }
+        if symbol.hasSuffix(".KS") || symbol.hasSuffix(".KQ") {
+            return "KRW"
+        }
+        if symbol.range(of: #"^\d{6}$"#, options: .regularExpression) != nil {
+            return "CNY"
+        }
+        return "USD"
     }
 
     @objc private func chartMetricChanged(_ sender: NSPopUpButton) {
@@ -2068,7 +2159,10 @@ final class PortfolioMainViewController: NSViewController {
         amountField.placeholderString = "金额"
         let feeField = NSTextField(string: editing.map { formatNumber($0.fee, minFraction: 0, maxFraction: 6) } ?? "0")
         let taxField = NSTextField(string: editing.map { formatNumber($0.tax, minFraction: 0, maxFraction: 6) } ?? "0")
-        let currencyField = NSTextField(string: editing?.currency ?? "CNY")
+        let initialCurrency = editing?.currency
+            ?? editorAssets.first.map { defaultTransactionCurrency(for: $0) }
+            ?? "CNY"
+        let currencyField = NSTextField(string: initialCurrency)
         let noteField = NSTextField(string: editing?.note ?? "")
         noteField.placeholderString = "可选"
 
@@ -2096,6 +2190,14 @@ final class PortfolioMainViewController: NSViewController {
             popup.controlSize = .regular
             popup.font = appFont(ofSize: 13, weight: .regular)
             popup.appearance = NSAppearance(named: .darkAqua)
+        }
+        transactionEditorAssets = editorAssets
+        transactionEditorCurrencyField = currencyField
+        assetPopup.target = self
+        assetPopup.action = #selector(transactionEditorAssetChanged(_:))
+        defer {
+            transactionEditorAssets = []
+            transactionEditorCurrencyField = nil
         }
 
         let stack = NSStackView()
@@ -2143,7 +2245,6 @@ final class PortfolioMainViewController: NSViewController {
                 return nil
             }
             let asset = editorAssets[assetPopup.indexOfSelectedItem]
-            let display = displayAssets.first(where: { $0.id == assetIdentity(for: asset) })
             var transaction = PortfolioTransaction.trade(
                 asset: asset,
                 name: asset.name,
@@ -2156,7 +2257,7 @@ final class PortfolioMainViewController: NSViewController {
                 note: noteField.stringValue
             )
             transaction.id = editing?.id ?? UUID()
-            transaction.currency = display?.currency?.uppercased() ?? currency
+            transaction.currency = currency
             return transaction
         }
 
