@@ -256,7 +256,7 @@ private extension DateFormatter {
     }()
     static let portfolioRow: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "MM-dd HH:mm"
+        formatter.dateFormat = "MM-dd"
         formatter.locale = Locale(identifier: "zh_CN")
         return formatter
     }()
@@ -401,6 +401,7 @@ final class PortfolioMainViewController: NSViewController {
     private var overviewSummaries: [PortfolioMarket: [String: PortfolioCurrencySummary]] = [:]
     private var transactionEditorAssets: [TrackedAsset] = []
     private weak var transactionEditorCurrencyField: NSTextField?
+    private weak var transactionEditorMarketTimeZonePopup: NSPopUpButton?
     private var transactionEditorRows: [String: NSView] = [:]
     private var transactionEditorSections: [String: NSView] = [:]
     private var sectionButtons: [Section: NSButton] = [:]
@@ -1837,7 +1838,15 @@ final class PortfolioMainViewController: NSViewController {
         title.textColor = PortfolioTheme.primaryText
         title.alignment = .left
         title.lineBreakMode = .byTruncatingTail
-        let detail = NSTextField(labelWithString: "\(DateFormatter.portfolioRow.string(from: transaction.occurredAt)) · \(sourceAccount)")
+        var detailParts = [transaction.tradeDate]
+        if transaction.kind.isTrade {
+            if let settlementDate = transaction.settlementDate {
+                detailParts.append("结算 \(settlementDate)")
+            }
+            detailParts.append(transaction.settlementStatus.title)
+        }
+        detailParts.append(sourceAccount)
+        let detail = NSTextField(labelWithString: detailParts.joined(separator: " · "))
         detail.font = appFont(ofSize: 11, weight: .regular)
         detail.textColor = PortfolioTheme.tertiaryText
         detail.alignment = .left
@@ -2066,9 +2075,9 @@ final class PortfolioMainViewController: NSViewController {
 
     @objc private func transactionEditorAssetChanged(_ sender: NSPopUpButton) {
         guard transactionEditorAssets.indices.contains(sender.indexOfSelectedItem) else { return }
-        transactionEditorCurrencyField?.stringValue = defaultTransactionCurrency(
-            for: transactionEditorAssets[sender.indexOfSelectedItem]
-        )
+        let asset = transactionEditorAssets[sender.indexOfSelectedItem]
+        transactionEditorCurrencyField?.stringValue = defaultTransactionCurrency(for: asset)
+        transactionEditorMarketTimeZonePopup?.selectItem(withTitle: marketTimeZoneTitle(portfolioMarketTimeZone(for: asset)))
     }
 
     @objc private func transactionEditorTypeChanged(_ sender: NSPopUpButton) {
@@ -2089,9 +2098,32 @@ final class PortfolioMainViewController: NSViewController {
         transactionEditorRows["targetCurrency"]?.isHidden = !isExchange
         transactionEditorRows["targetAmount"]?.isHidden = !isExchange
         transactionEditorRows["fee"]?.isHidden = kind == .deposit || kind == .withdrawal || kind == .dividend
-        transactionEditorRows["tax"]?.isHidden = kind == .deposit || kind == .withdrawal || kind == .dividend
+        transactionEditorRows["transactionLevy"]?.isHidden = !isTrade
+        transactionEditorRows["tradingFee"]?.isHidden = !isTrade
+        transactionEditorRows["tax"]?.isHidden = !isTrade
+        transactionEditorRows["marketTimeZone"]?.isHidden = !isTrade
+        transactionEditorRows["settlementDate"]?.isHidden = !isTrade
+        transactionEditorRows["settlementStatus"]?.isHidden = !isTrade
         transactionEditorSections["trade"]?.isHidden = !isTrade
         transactionEditorSections["fees"]?.isHidden = kind == .deposit || kind == .withdrawal || kind == .dividend
+    }
+
+    private func marketTimeZoneTitle(_ identifier: String) -> String {
+        switch identifier {
+        case "America/New_York": return "美国东部时间"
+        case "Asia/Hong_Kong": return "香港时间"
+        case "Asia/Shanghai": return "中国标准时间"
+        default: return "未指定"
+        }
+    }
+
+    private func marketTimeZoneIdentifier(_ title: String?) -> String {
+        switch title {
+        case "美国东部时间": return "America/New_York"
+        case "香港时间": return "Asia/Hong_Kong"
+        case "中国标准时间": return "Asia/Shanghai"
+        default: return ""
+        }
     }
 
     @objc private func addWatchlistClicked(_ sender: NSButton) {
@@ -2409,7 +2441,7 @@ final class PortfolioMainViewController: NSViewController {
         let alert = NSAlert()
         alert.messageText = editing == nil ? "记录交易" : "编辑交易"
         alert.informativeText = editing == nil
-            ? "买入、卖出和资金流水会立即参与持仓与盈亏计算。"
+            ? "交易只记录成交日期；成交时间无需填写。"
             : "保存后，持仓和历史统计会按修改后的记录重新计算。"
         alert.addButton(withTitle: "保存")
         alert.addButton(withTitle: "取消")
@@ -2441,7 +2473,8 @@ final class PortfolioMainViewController: NSViewController {
         }
         let assetPopup = NSPopUpButton()
         assetPopup.addItems(withTitles: editorAssets.map { "\($0.name)（\($0.symbol)）" })
-        let dateField = NSTextField(string: DateFormatter.portfolioEditor.string(from: editing?.occurredAt ?? Date()))
+        let dateField = NSTextField(string: editing?.tradeDate ?? PortfolioDate.string(from: Date()))
+        dateField.placeholderString = "例如 2026-08-20"
         let quantityField = NSTextField(string: "")
         quantityField.placeholderString = "数量"
         let priceField = NSTextField(string: "")
@@ -2449,6 +2482,8 @@ final class PortfolioMainViewController: NSViewController {
         let amountField = NSTextField(string: "")
         amountField.placeholderString = "金额"
         let feeField = NSTextField(string: editing.map { formatNumber($0.fee, minFraction: 0, maxFraction: 6) } ?? "0")
+        let transactionLevyField = NSTextField(string: editing.map { formatNumber($0.transactionLevy, minFraction: 0, maxFraction: 6) } ?? "0")
+        let tradingFeeField = NSTextField(string: editing.map { formatNumber($0.tradingFee, minFraction: 0, maxFraction: 6) } ?? "0")
         let taxField = NSTextField(string: editing.map { formatNumber($0.tax, minFraction: 0, maxFraction: 6) } ?? "0")
         let initialCurrency = editing?.currency
             ?? editorAssets.first.map { defaultTransactionCurrency(for: $0) }
@@ -2458,6 +2493,12 @@ final class PortfolioMainViewController: NSViewController {
         targetCurrencyField.placeholderString = "例如 USD"
         let targetAmountField = NSTextField(string: editing.map { $0.targetAmount > 0 ? formatNumber($0.targetAmount, minFraction: 0, maxFraction: 6) : "" } ?? "")
         targetAmountField.placeholderString = "收到金额"
+        let marketTimeZonePopup = NSPopUpButton()
+        marketTimeZonePopup.addItems(withTitles: ["美国东部时间", "香港时间", "中国标准时间", "未指定"])
+        let settlementDateField = NSTextField(string: editing?.settlementDate ?? "")
+        settlementDateField.placeholderString = "可选，例如 2026-08-21"
+        let settlementStatusPopup = NSPopUpButton()
+        settlementStatusPopup.addItems(withTitles: PortfolioSettlementStatus.allCases.map(\.title))
         let noteField = NSTextField(string: editing?.note ?? "")
         noteField.placeholderString = "可选"
 
@@ -2478,6 +2519,13 @@ final class PortfolioMainViewController: NSViewController {
             }
         }
 
+        let selectedAsset = editorAssets.indices.contains(assetPopup.indexOfSelectedItem)
+            ? editorAssets[assetPopup.indexOfSelectedItem]
+            : editorAssets.first
+        let initialMarketTimeZone = editing?.marketTimeZone ?? selectedAsset.map(portfolioMarketTimeZone(for:)) ?? ""
+        marketTimeZonePopup.selectItem(withTitle: marketTimeZoneTitle(initialMarketTimeZone))
+        settlementStatusPopup.selectItem(withTitle: (editing?.settlementStatus ?? .notRecorded).title)
+
         if let accountID = editing?.accountID,
            let index = accounts.firstIndex(where: { $0.id == accountID }) {
             accountPopup.selectItem(at: index)
@@ -2491,16 +2539,17 @@ final class PortfolioMainViewController: NSViewController {
             targetAccountPopup.selectItem(at: accountPopup.indexOfSelectedItem)
         }
 
-        for field in [dateField, quantityField, priceField, amountField, feeField, taxField, currencyField, targetCurrencyField, targetAmountField, noteField] {
+        for field in [dateField, quantityField, priceField, amountField, feeField, transactionLevyField, tradingFeeField, taxField, currencyField, targetCurrencyField, targetAmountField, settlementDateField, noteField] {
             styleEditorTextField(field)
         }
-        for popup in [typePopup, accountPopup, targetAccountPopup, assetPopup] {
+        for popup in [typePopup, accountPopup, targetAccountPopup, assetPopup, marketTimeZonePopup, settlementStatusPopup] {
             popup.controlSize = .regular
             popup.font = appFont(ofSize: 13, weight: .regular)
             popup.appearance = NSAppearance(named: .darkAqua)
         }
         transactionEditorAssets = editorAssets
         transactionEditorCurrencyField = currencyField
+        transactionEditorMarketTimeZonePopup = marketTimeZonePopup
         assetPopup.target = self
         assetPopup.action = #selector(transactionEditorAssetChanged(_:))
         typePopup.target = self
@@ -2508,6 +2557,7 @@ final class PortfolioMainViewController: NSViewController {
         defer {
             transactionEditorAssets = []
             transactionEditorCurrencyField = nil
+            transactionEditorMarketTimeZonePopup = nil
             transactionEditorRows = [:]
             transactionEditorSections = [:]
         }
@@ -2516,20 +2566,25 @@ final class PortfolioMainViewController: NSViewController {
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 12
-        stack.frame = NSRect(x: 0, y: 0, width: 430, height: 500)
+        stack.frame = NSRect(x: 0, y: 0, width: 430, height: 640)
         let typeRow = editorRow("类型", typePopup)
         let accountRow = editorRow("账户", accountPopup)
         let targetAccountRow = editorRow("收款账户", targetAccountPopup)
         let assetRow = editorRow("资产", assetPopup)
-        let dateRow = editorRow("时间", dateField)
+        let dateRow = editorRow("日期", dateField)
         let quantityRow = editorRow("数量", quantityField)
         let priceRow = editorRow("成交单价", priceField)
         let amountRow = editorRow("金额", amountField)
         let targetCurrencyRow = editorRow("收到币种", targetCurrencyField)
         let targetAmountRow = editorRow("收到金额", targetAmountField)
-        let feeRow = editorRow("手续费", feeField)
-        let taxRow = editorRow("税费", taxField)
+        let feeRow = editorRow("佣金／手续费", feeField)
+        let transactionLevyRow = editorRow("交易征费", transactionLevyField)
+        let tradingFeeRow = editorRow("交易费", tradingFeeField)
+        let taxRow = editorRow("印花税", taxField)
         let currencyRow = editorRow("结算币种", currencyField)
+        let marketTimeZoneRow = editorRow("交易所时区", marketTimeZonePopup)
+        let settlementDateRow = editorRow("结算日期", settlementDateField)
+        let settlementStatusRow = editorRow("结算状态", settlementStatusPopup)
         let noteRow = editorRow("备注", noteField)
         transactionEditorRows = [
             "asset": assetRow,
@@ -2540,12 +2595,17 @@ final class PortfolioMainViewController: NSViewController {
             "targetCurrency": targetCurrencyRow,
             "targetAmount": targetAmountRow,
             "fee": feeRow,
-            "tax": taxRow
+            "transactionLevy": transactionLevyRow,
+            "tradingFee": tradingFeeRow,
+            "tax": taxRow,
+            "marketTimeZone": marketTimeZoneRow,
+            "settlementDate": settlementDateRow,
+            "settlementStatus": settlementStatusRow
         ]
         let basicSection = editorSection("基本信息", rows: [typeRow, accountRow, targetAccountRow, dateRow])
         let tradeSection = editorSection("交易标的", rows: [assetRow, quantityRow, priceRow])
-        let settlementSection = editorSection("结算信息", rows: [currencyRow, amountRow, targetCurrencyRow, targetAmountRow])
-        let feesSection = editorSection("费用", rows: [feeRow, taxRow])
+        let settlementSection = editorSection("结算信息", rows: [currencyRow, amountRow, targetCurrencyRow, targetAmountRow, marketTimeZoneRow, settlementDateRow, settlementStatusRow])
+        let feesSection = editorSection("费用", rows: [feeRow, transactionLevyRow, tradingFeeRow, taxRow])
         let noteSection = editorSection("备注", rows: [noteRow])
         transactionEditorSections = [
             "trade": tradeSection,
@@ -2560,12 +2620,22 @@ final class PortfolioMainViewController: NSViewController {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         let kind = kinds[min(max(0, typePopup.indexOfSelectedItem), kinds.count - 1)]
-        guard let occurredAt = DateFormatter.portfolioEditor.date(from: dateField.stringValue),
+        let tradeDate = dateField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let settlementDate = settlementDateField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let occurredAt = PortfolioDate.date(from: tradeDate),
               let fee = decimal(feeField.stringValue),
+              let transactionLevy = decimal(transactionLevyField.stringValue),
+              let tradingFee = decimal(tradingFeeField.stringValue),
               let tax = decimal(taxField.stringValue),
               fee >= 0,
+              transactionLevy >= 0,
+              tradingFee >= 0,
               tax >= 0 else {
-            showEditorError("时间、手续费和税费格式不正确")
+            showEditorError("日期或费用格式不正确")
+            return nil
+        }
+        guard settlementDate.isEmpty || PortfolioDate.date(from: settlementDate) != nil else {
+            showEditorError("结算日期格式应为 yyyy-MM-dd")
             return nil
         }
         let currency = currencyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -2600,7 +2670,13 @@ final class PortfolioMainViewController: NSViewController {
                 fee: fee,
                 tax: tax,
                 note: noteField.stringValue,
-                accountID: accountID
+                accountID: accountID,
+                tradeDate: tradeDate,
+                marketTimeZone: marketTimeZoneIdentifier(marketTimeZonePopup.titleOfSelectedItem),
+                settlementDate: settlementDate.isEmpty ? nil : settlementDate,
+                settlementStatus: PortfolioSettlementStatus.allCases.first(where: { $0.title == settlementStatusPopup.titleOfSelectedItem }) ?? .notRecorded,
+                transactionLevy: transactionLevy,
+                tradingFee: tradingFee
             )
             transaction.id = editing?.id ?? UUID()
             transaction.currency = currency
@@ -2661,7 +2737,9 @@ final class PortfolioMainViewController: NSViewController {
             accountID: accountID,
             targetAccountID: targetAccountID,
             targetCurrency: targetCurrency,
-            targetAmount: targetAmount
+            targetAmount: targetAmount,
+            tradeDate: tradeDate,
+            settlementStatus: .notApplicable
         )
     }
 
@@ -2697,6 +2775,7 @@ final class PortfolioMainViewController: NSViewController {
         header.textColor = PortfolioTheme.tertiaryText
         header.alignment = .left
         header.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        header.widthAnchor.constraint(equalTo: section.widthAnchor).isActive = true
         section.addArrangedSubview(header)
 
         for row in rows {

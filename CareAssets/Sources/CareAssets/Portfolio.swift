@@ -29,6 +29,61 @@ enum PortfolioTransactionKind: String, CaseIterable, Codable {
     }
 }
 
+enum PortfolioSettlementStatus: String, CaseIterable, Codable {
+    case notRecorded
+    case pending
+    case settled
+    case notApplicable
+
+    var title: String {
+        switch self {
+        case .notRecorded: return "未记录"
+        case .pending: return "待结算"
+        case .settled: return "已结算"
+        case .notApplicable: return "不适用"
+        }
+    }
+}
+
+enum PortfolioDate {
+    private static let utc = TimeZone(secondsFromGMT: 0)!
+
+    static func string(from date: Date, timeZone: TimeZone = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", components.year ?? 1970, components.month ?? 1, components.day ?? 1)
+    }
+
+    static func date(from string: String) -> Date? {
+        let parts = string.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+    }
+
+    static func normalizedDate(from date: Date, timeZone: TimeZone = .current) -> Date {
+        self.date(from: string(from: date, timeZone: timeZone)) ?? date
+    }
+}
+
+func portfolioMarketTimeZone(for asset: TrackedAsset) -> String {
+    let symbol = (asset.canonicalSymbol ?? asset.symbol).uppercased()
+    if symbol.hasPrefix("US:") { return "America/New_York" }
+    if symbol.hasPrefix("HK:") { return "Asia/Hong_Kong" }
+    if symbol.hasPrefix("SH:") || symbol.hasPrefix("SZ:") { return "Asia/Shanghai" }
+    return ""
+}
+
+private func portfolioMarketTimeZone(forAssetID assetID: String?) -> String {
+    let identifier = assetID?.uppercased() ?? ""
+    if identifier.contains("-US:") { return "America/New_York" }
+    if identifier.contains("-HK:") { return "Asia/Hong_Kong" }
+    if identifier.contains("-SH:") || identifier.contains("-SZ:") { return "Asia/Shanghai" }
+    return ""
+}
+
 struct PortfolioAccount: Identifiable, Codable, Equatable {
     var id: UUID
     var name: String
@@ -60,17 +115,123 @@ struct PortfolioTransaction: Identifiable, Codable {
     var targetAccountID: UUID? = nil
     var targetCurrency: String = ""
     var targetAmount: Double = 0
+    /// Exchange-local calendar date. `occurredAt` remains a normalized noon UTC value for legacy chart code.
+    var tradeDate: String = ""
+    var marketTimeZone: String = ""
+    var executedAt: Date? = nil
+    var settlementDate: String? = nil
+    var settlementStatus: PortfolioSettlementStatus = .notRecorded
+    var transactionLevy: Double = 0
+    var tradingFee: Double = 0
+
+    init(
+        id: UUID,
+        occurredAt: Date,
+        kind: PortfolioTransactionKind,
+        assetID: String?,
+        assetName: String,
+        symbol: String,
+        assetType: AssetType?,
+        currency: String,
+        quantity: Double,
+        unitPrice: Double,
+        amount: Double,
+        fee: Double,
+        tax: Double,
+        note: String,
+        accountID: UUID? = nil,
+        targetAccountID: UUID? = nil,
+        targetCurrency: String = "",
+        targetAmount: Double = 0,
+        tradeDate: String = "",
+        marketTimeZone: String = "",
+        executedAt: Date? = nil,
+        settlementDate: String? = nil,
+        settlementStatus: PortfolioSettlementStatus = .notRecorded,
+        transactionLevy: Double = 0,
+        tradingFee: Double = 0
+    ) {
+        self.id = id
+        self.occurredAt = occurredAt
+        self.kind = kind
+        self.assetID = assetID
+        self.assetName = assetName
+        self.symbol = symbol
+        self.assetType = assetType
+        self.currency = currency
+        self.quantity = quantity
+        self.unitPrice = unitPrice
+        self.amount = amount
+        self.fee = fee
+        self.tax = tax
+        self.note = note
+        self.accountID = accountID
+        self.targetAccountID = targetAccountID
+        self.targetCurrency = targetCurrency
+        self.targetAmount = targetAmount
+        self.tradeDate = PortfolioDate.date(from: tradeDate) == nil
+            ? PortfolioDate.string(from: occurredAt)
+            : tradeDate
+        self.marketTimeZone = marketTimeZone
+        self.executedAt = executedAt
+        self.settlementDate = settlementDate.flatMap { PortfolioDate.date(from: $0) == nil ? nil : $0 }
+        self.settlementStatus = settlementStatus
+        self.transactionLevy = transactionLevy
+        self.tradingFee = tradingFee
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, occurredAt, kind, assetID, assetName, symbol, assetType, currency, quantity, unitPrice, amount, fee, tax, note
+        case accountID, targetAccountID, targetCurrency, targetAmount
+        case tradeDate, marketTimeZone, executedAt, settlementDate, settlementStatus, transactionLevy, tradingFee
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let occurredAt = try container.decode(Date.self, forKey: .occurredAt)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            occurredAt: occurredAt,
+            kind: try container.decode(PortfolioTransactionKind.self, forKey: .kind),
+            assetID: try container.decodeIfPresent(String.self, forKey: .assetID),
+            assetName: try container.decodeIfPresent(String.self, forKey: .assetName) ?? "",
+            symbol: try container.decodeIfPresent(String.self, forKey: .symbol) ?? "",
+            assetType: try container.decodeIfPresent(AssetType.self, forKey: .assetType),
+            currency: try container.decodeIfPresent(String.self, forKey: .currency) ?? "",
+            quantity: try container.decodeIfPresent(Double.self, forKey: .quantity) ?? 0,
+            unitPrice: try container.decodeIfPresent(Double.self, forKey: .unitPrice) ?? 0,
+            amount: try container.decodeIfPresent(Double.self, forKey: .amount) ?? 0,
+            fee: try container.decodeIfPresent(Double.self, forKey: .fee) ?? 0,
+            tax: try container.decodeIfPresent(Double.self, forKey: .tax) ?? 0,
+            note: try container.decodeIfPresent(String.self, forKey: .note) ?? "",
+            accountID: try container.decodeIfPresent(UUID.self, forKey: .accountID),
+            targetAccountID: try container.decodeIfPresent(UUID.self, forKey: .targetAccountID),
+            targetCurrency: try container.decodeIfPresent(String.self, forKey: .targetCurrency) ?? "",
+            targetAmount: try container.decodeIfPresent(Double.self, forKey: .targetAmount) ?? 0,
+            tradeDate: try container.decodeIfPresent(String.self, forKey: .tradeDate) ?? PortfolioDate.string(from: occurredAt),
+            marketTimeZone: try container.decodeIfPresent(String.self, forKey: .marketTimeZone) ?? "",
+            executedAt: try container.decodeIfPresent(Date.self, forKey: .executedAt),
+            settlementDate: try container.decodeIfPresent(String.self, forKey: .settlementDate),
+            settlementStatus: try container.decodeIfPresent(PortfolioSettlementStatus.self, forKey: .settlementStatus) ?? .notRecorded,
+            transactionLevy: try container.decodeIfPresent(Double.self, forKey: .transactionLevy) ?? 0,
+            tradingFee: try container.decodeIfPresent(Double.self, forKey: .tradingFee) ?? 0
+        )
+    }
 
     var grossAmount: Double {
         kind.isTrade && kind != .opening ? quantity * unitPrice : amount
     }
 
+    var totalCharges: Double {
+        fee + transactionLevy + tradingFee + tax
+    }
+
     var costAmount: Double {
-        quantity * unitPrice + fee + tax
+        quantity * unitPrice + totalCharges
     }
 
     var netProceeds: Double {
-        quantity * unitPrice - fee - tax
+        quantity * unitPrice - totalCharges
     }
 
     static func trade(
@@ -83,7 +244,13 @@ struct PortfolioTransaction: Identifiable, Codable {
         fee: Double,
         tax: Double,
         note: String,
-        accountID: UUID? = nil
+        accountID: UUID? = nil,
+        tradeDate: String? = nil,
+        marketTimeZone: String = "",
+        settlementDate: String? = nil,
+        settlementStatus: PortfolioSettlementStatus = .pending,
+        transactionLevy: Double = 0,
+        tradingFee: Double = 0
     ) -> PortfolioTransaction {
         PortfolioTransaction(
             id: UUID(),
@@ -100,7 +267,13 @@ struct PortfolioTransaction: Identifiable, Codable {
             fee: fee,
             tax: tax,
             note: note,
-            accountID: accountID
+            accountID: accountID,
+            tradeDate: tradeDate ?? PortfolioDate.string(from: occurredAt),
+            marketTimeZone: marketTimeZone,
+            settlementDate: settlementDate,
+            settlementStatus: settlementStatus,
+            transactionLevy: transactionLevy,
+            tradingFee: tradingFee
         )
     }
 }
@@ -366,6 +539,7 @@ final class PortfolioStore {
         do {
             try open()
             try createSchema()
+            try migrateTransactionsToDateOnlyIfNeeded()
         } catch {
             NSLog("CareAssets portfolio database failed: \(error.localizedDescription)")
         }
@@ -459,7 +633,9 @@ final class PortfolioStore {
         let sql = """
         SELECT id, occurred_at, kind, asset_id, asset_name, symbol, asset_type,
                currency, quantity, unit_price, amount, fee, tax, note,
-               account_id, target_account_id, target_currency, target_amount
+               account_id, target_account_id, target_currency, target_amount,
+               trade_date, market_time_zone, executed_at, settlement_date,
+               settlement_status, transaction_levy, trading_fee
         FROM transactions
         ORDER BY occurred_at ASC, created_at ASC
         """
@@ -489,7 +665,14 @@ final class PortfolioStore {
                 accountID: text(statement, 14).flatMap(UUID.init(uuidString:)),
                 targetAccountID: text(statement, 15).flatMap(UUID.init(uuidString:)),
                 targetCurrency: text(statement, 16) ?? "",
-                targetAmount: sqlite3_column_double(statement, 17)
+                targetAmount: sqlite3_column_double(statement, 17),
+                tradeDate: text(statement, 18) ?? "",
+                marketTimeZone: text(statement, 19) ?? "",
+                executedAt: number(statement, 20).map(Date.init(timeIntervalSince1970:)),
+                settlementDate: text(statement, 21),
+                settlementStatus: text(statement, 22).flatMap(PortfolioSettlementStatus.init(rawValue:)) ?? .notRecorded,
+                transactionLevy: sqlite3_column_double(statement, 23),
+                tradingFee: sqlite3_column_double(statement, 24)
             )
             transactions.append(transaction)
         }
@@ -528,6 +711,7 @@ final class PortfolioStore {
                 )
             }
             try execute("COMMIT")
+            try migrateTransactionsToDateOnlyIfNeeded()
         } catch {
             try? execute("ROLLBACK")
             throw error
@@ -543,8 +727,9 @@ final class PortfolioStore {
         INSERT INTO transactions
         (id, occurred_at, kind, asset_id, asset_name, symbol, asset_type, currency,
          quantity, unit_price, amount, fee, tax, note, account_id, target_account_id,
-         target_currency, target_amount, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         target_currency, target_amount, trade_date, market_time_zone, executed_at,
+         settlement_date, settlement_status, transaction_levy, trading_fee, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try perform(sql) { statement in
             bind(statement, index: 1, value: transaction.id.uuidString)
@@ -565,8 +750,15 @@ final class PortfolioStore {
             bind(statement, index: 16, value: transaction.targetAccountID?.uuidString)
             bind(statement, index: 17, value: transaction.targetCurrency.uppercased())
             bind(statement, index: 18, value: transaction.targetAmount)
-            bind(statement, index: 19, value: createdAt.timeIntervalSince1970)
-            bind(statement, index: 20, value: updatedAt.timeIntervalSince1970)
+            bind(statement, index: 19, value: transaction.tradeDate)
+            bind(statement, index: 20, value: transaction.marketTimeZone)
+            bind(statement, index: 21, value: transaction.executedAt?.timeIntervalSince1970)
+            bind(statement, index: 22, value: transaction.settlementDate)
+            bind(statement, index: 23, value: transaction.settlementStatus.rawValue)
+            bind(statement, index: 24, value: transaction.transactionLevy)
+            bind(statement, index: 25, value: transaction.tradingFee)
+            bind(statement, index: 26, value: createdAt.timeIntervalSince1970)
+            bind(statement, index: 27, value: updatedAt.timeIntervalSince1970)
         }
     }
 
@@ -575,7 +767,9 @@ final class PortfolioStore {
         UPDATE transactions
         SET occurred_at = ?, kind = ?, asset_id = ?, asset_name = ?, symbol = ?, asset_type = ?,
             currency = ?, quantity = ?, unit_price = ?, amount = ?, fee = ?, tax = ?, note = ?,
-            account_id = ?, target_account_id = ?, target_currency = ?, target_amount = ?, updated_at = ?
+            account_id = ?, target_account_id = ?, target_currency = ?, target_amount = ?,
+            trade_date = ?, market_time_zone = ?, executed_at = ?, settlement_date = ?,
+            settlement_status = ?, transaction_levy = ?, trading_fee = ?, updated_at = ?
         WHERE id = ?
         """
         try perform(sql) { statement in
@@ -596,8 +790,15 @@ final class PortfolioStore {
             bind(statement, index: 15, value: transaction.targetAccountID?.uuidString)
             bind(statement, index: 16, value: transaction.targetCurrency.uppercased())
             bind(statement, index: 17, value: transaction.targetAmount)
-            bind(statement, index: 18, value: Date().timeIntervalSince1970)
-            bind(statement, index: 19, value: transaction.id.uuidString)
+            bind(statement, index: 18, value: transaction.tradeDate)
+            bind(statement, index: 19, value: transaction.marketTimeZone)
+            bind(statement, index: 20, value: transaction.executedAt?.timeIntervalSince1970)
+            bind(statement, index: 21, value: transaction.settlementDate)
+            bind(statement, index: 22, value: transaction.settlementStatus.rawValue)
+            bind(statement, index: 23, value: transaction.transactionLevy)
+            bind(statement, index: 24, value: transaction.tradingFee)
+            bind(statement, index: 25, value: Date().timeIntervalSince1970)
+            bind(statement, index: 26, value: transaction.id.uuidString)
         }
     }
 
@@ -697,6 +898,55 @@ final class PortfolioStore {
         } catch {
             NSLog("CareAssets account migration failed: \(error.localizedDescription)")
         }
+    }
+
+    private func migrateTransactionsToDateOnlyIfNeeded() throws {
+        let metadataKey = "transactions_date_only_v1"
+        guard !hasMetadata(metadataKey) || hasTransactionsNeedingDateOnlyMigration() else { return }
+
+        let transactions = loadTransactions()
+        try execute("BEGIN IMMEDIATE TRANSACTION")
+        do {
+            for transaction in transactions {
+                let tradeDate = PortfolioDate.string(from: transaction.occurredAt)
+                let marketTimeZone = transaction.kind.isTrade
+                    ? portfolioMarketTimeZone(forAssetID: transaction.assetID)
+                    : ""
+                let settlementStatus: PortfolioSettlementStatus = transaction.kind.isTrade ? .notRecorded : .notApplicable
+                try perform("""
+                UPDATE transactions
+                SET occurred_at = ?, trade_date = ?, market_time_zone = ?, executed_at = NULL,
+                    settlement_date = NULL, settlement_status = ?, transaction_levy = 0, trading_fee = 0
+                WHERE id = ?
+                """) { statement in
+                    bind(statement, index: 1, value: PortfolioDate.date(from: tradeDate)?.timeIntervalSince1970)
+                    bind(statement, index: 2, value: tradeDate)
+                    bind(statement, index: 3, value: marketTimeZone)
+                    bind(statement, index: 4, value: settlementStatus.rawValue)
+                    bind(statement, index: 5, value: transaction.id.uuidString)
+                }
+            }
+            try setMetadata(metadataKey, value: "1")
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
+    }
+
+    private func hasTransactionsNeedingDateOnlyMigration() -> Bool {
+        guard let database,
+              let statement = prepare("""
+              SELECT COUNT(*)
+              FROM transactions
+              WHERE trade_date IS NULL OR trade_date = '' OR executed_at IS NOT NULL
+                 OR (kind IN ('buy', 'sell', 'opening') AND (market_time_zone IS NULL OR market_time_zone = ''))
+              """, database: database) else {
+            return false
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { return false }
+        return sqlite3_column_int(statement, 0) > 0
     }
 
     @discardableResult
@@ -909,6 +1159,13 @@ final class PortfolioStore {
             fee REAL NOT NULL DEFAULT 0,
             tax REAL NOT NULL DEFAULT 0,
             note TEXT NOT NULL DEFAULT '',
+            trade_date TEXT NOT NULL DEFAULT '',
+            market_time_zone TEXT NOT NULL DEFAULT '',
+            executed_at REAL,
+            settlement_date TEXT,
+            settlement_status TEXT NOT NULL DEFAULT 'notRecorded',
+            transaction_levy REAL NOT NULL DEFAULT 0,
+            trading_fee REAL NOT NULL DEFAULT 0,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL
         )
@@ -925,7 +1182,15 @@ final class PortfolioStore {
         try? execute("ALTER TABLE transactions ADD COLUMN target_account_id TEXT")
         try? execute("ALTER TABLE transactions ADD COLUMN target_currency TEXT NOT NULL DEFAULT ''")
         try? execute("ALTER TABLE transactions ADD COLUMN target_amount REAL NOT NULL DEFAULT 0")
+        try? execute("ALTER TABLE transactions ADD COLUMN trade_date TEXT NOT NULL DEFAULT ''")
+        try? execute("ALTER TABLE transactions ADD COLUMN market_time_zone TEXT NOT NULL DEFAULT ''")
+        try? execute("ALTER TABLE transactions ADD COLUMN executed_at REAL")
+        try? execute("ALTER TABLE transactions ADD COLUMN settlement_date TEXT")
+        try? execute("ALTER TABLE transactions ADD COLUMN settlement_status TEXT NOT NULL DEFAULT 'notRecorded'")
+        try? execute("ALTER TABLE transactions ADD COLUMN transaction_levy REAL NOT NULL DEFAULT 0")
+        try? execute("ALTER TABLE transactions ADD COLUMN trading_fee REAL NOT NULL DEFAULT 0")
         try execute("CREATE INDEX IF NOT EXISTS transactions_account_id ON transactions(account_id)")
+        try execute("CREATE INDEX IF NOT EXISTS transactions_trade_date ON transactions(trade_date)")
         try execute("""
         CREATE TABLE IF NOT EXISTS portfolio_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1192,14 +1457,14 @@ enum PortfolioCalculator {
                 summary.dividends += transaction.amount
 
             case .transfer:
-                summary.cashBalance -= transaction.fee + transaction.tax
+                summary.cashBalance -= transaction.totalCharges
 
             case .exchange:
                 let receivingCurrency = transaction.targetCurrency.uppercased()
                 guard !receivingCurrency.isEmpty,
                       receivingCurrency != currency,
                       transaction.targetAmount > 0 else { continue }
-                summary.cashBalance -= transaction.amount + transaction.fee + transaction.tax
+                summary.cashBalance -= transaction.amount + transaction.totalCharges
                 summaries[currency] = summary
                 var receivingSummary = summaries[receivingCurrency] ?? PortfolioCurrencySummary(currency: receivingCurrency)
                 receivingSummary.cashBalance += transaction.targetAmount

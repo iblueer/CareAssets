@@ -5328,7 +5328,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .map { transaction in
                 [
                     transaction.id.uuidString,
-                    String(transaction.occurredAt.timeIntervalSince1970),
+                    transaction.tradeDate,
+                    transaction.marketTimeZone,
+                    transaction.settlementDate ?? "",
+                    transaction.settlementStatus.rawValue,
                     transaction.kind.rawValue,
                     transaction.assetID ?? "",
                     transaction.currency,
@@ -5340,7 +5343,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     String(transaction.unitPrice),
                     String(transaction.amount),
                     String(transaction.fee),
-                    String(transaction.tax)
+                    String(transaction.tax),
+                    String(transaction.transactionLevy),
+                    String(transaction.tradingFee)
                 ].joined(separator: "|")
             }
             .joined(separator: "\n")
