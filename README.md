@@ -12,6 +12,7 @@ CareAssets 是一个轻巧的 macOS 状态栏资产追踪工具。它把你关�
 
 - 轻巧状态栏：只把关键资产价格放在 macOS 顶部状态栏，不打扰当前工作。
 - 多市场集合：支持币、美股、港股、A 股和黄金，一个小窗口里统一查看。
+- 交易账本：通过买入、卖出、入金、出金和分红记录生成持仓、资产与盈亏统计；计算规则见[账本统计说明](docs/portfolio-accounting.md)。
 - 快速搜索添加：支持搜索股票代码、公司名、币种名称，搜索结果点击即可添加或取消。
 - 自定义展示：可勾选是否显示在顶部，支持拖动排序、移出资产，列表过长时可滚动。
 - 价格颜色可选：支持白色、红涨绿跌、红跌绿涨，适配不同市场习惯。
@@ -72,15 +73,15 @@ cp -R build/CareAssets.app /Applications/
 
 由于当前版本没有 notarize，首次打开时 macOS 可能会拦截。可以在系统设置的“隐私与安全性”里允许打开，或右键 App 选择“打开”。
 
-## 配置文件
+## 本地数据库
 
-CareAssets 的本地配置保存在：
+CareAssets 的设置、自选、账户、交易记录和统计缓存统一保存在：
 
 ```text
-~/Library/Application Support/CareAssets/config.json
+~/Library/Application Support/CareAssets/CareAssets.sqlite3
 ```
 
-配置内容包括刷新间隔、语言、价格颜色、标题颜色和已添加资产列表。
+旧版 `config.json` 会在首次启动时自动导入并改名为 `config.json.migrated`，之后不再读取或写入 JSON。iCloud Drive 同步使用独立的 `CareAssets-sync.sqlite3` 文件，不复制本机统计缓存。
 
 ## 隐私
 
@@ -170,15 +171,15 @@ cp -R build/CareAssets.app /Applications/
 
 If macOS blocks the first launch because the app is not notarized, open it from System Settings > Privacy & Security, or right-click the app and choose Open.
 
-## Configuration
+## Local database
 
-CareAssets stores local configuration here:
+CareAssets stores settings, watchlist, accounts, transactions, and cached statistics in one SQLite database:
 
 ```text
-~/Library/Application Support/CareAssets/config.json
+~/Library/Application Support/CareAssets/CareAssets.sqlite3
 ```
 
-The config includes refresh interval, selected language, price color mode, title color mode, and your tracked assets.
+On first launch, the previous `config.json` is imported and renamed to `config.json.migrated`; it is not used afterward. iCloud Drive sync uses a separate `CareAssets-sync.sqlite3` file and does not copy local chart caches.
 
 ## Privacy
 

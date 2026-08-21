@@ -7,6 +7,8 @@ enum PortfolioTransactionKind: String, CaseIterable, Codable {
     case deposit
     case withdrawal
     case dividend
+    case transfer
+    case exchange
     case opening
 
     var title: String {
@@ -16,12 +18,26 @@ enum PortfolioTransactionKind: String, CaseIterable, Codable {
         case .deposit: return "入金"
         case .withdrawal: return "出金"
         case .dividend: return "分红"
+        case .transfer: return "账户转账"
+        case .exchange: return "换汇"
         case .opening: return "期初持仓"
         }
     }
 
     var isTrade: Bool {
         self == .buy || self == .sell || self == .opening
+    }
+}
+
+struct PortfolioAccount: Identifiable, Codable, Equatable {
+    var id: UUID
+    var name: String
+    var createdAt: Date
+
+    init(id: UUID = UUID(), name: String, createdAt: Date = Date()) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
     }
 }
 
@@ -40,6 +56,10 @@ struct PortfolioTransaction: Identifiable, Codable {
     var fee: Double
     var tax: Double
     var note: String
+    var accountID: UUID? = nil
+    var targetAccountID: UUID? = nil
+    var targetCurrency: String = ""
+    var targetAmount: Double = 0
 
     var grossAmount: Double {
         kind.isTrade && kind != .opening ? quantity * unitPrice : amount
@@ -62,7 +82,8 @@ struct PortfolioTransaction: Identifiable, Codable {
         unitPrice: Double,
         fee: Double,
         tax: Double,
-        note: String
+        note: String,
+        accountID: UUID? = nil
     ) -> PortfolioTransaction {
         PortfolioTransaction(
             id: UUID(),
@@ -78,13 +99,15 @@ struct PortfolioTransaction: Identifiable, Codable {
             amount: quantity * unitPrice,
             fee: fee,
             tax: tax,
-            note: note
+            note: note,
+            accountID: accountID
         )
     }
 }
 
 struct PortfolioPosition {
     var assetID: String
+    var accountID: UUID?
     var name: String
     var symbol: String
     var currency: String
@@ -133,6 +156,32 @@ struct PortfolioSummary {
     }
 }
 
+enum PortfolioMarket: String, CaseIterable, Codable, Sendable, Hashable {
+    case all
+    case us
+    case hk
+    case cn
+
+    var title: String {
+        switch self {
+        case .all: return "全部"
+        case .us: return "美股"
+        case .hk: return "港股"
+        case .cn: return "大A"
+        }
+    }
+
+    func includes(assetID: String?) -> Bool {
+        guard self != .all, let assetID = assetID?.uppercased() else { return self == .all }
+        switch self {
+        case .all: return true
+        case .us: return assetID.hasPrefix("STOCK-US:")
+        case .hk: return assetID.hasPrefix("STOCK-HK:")
+        case .cn: return assetID.hasPrefix("STOCK-SH:") || assetID.hasPrefix("STOCK-SZ:")
+        }
+    }
+}
+
 enum PortfolioChartMetric: String, CaseIterable {
     case invested
     case marketValue
@@ -151,6 +200,7 @@ enum PortfolioChartMetric: String, CaseIterable {
 
 struct PortfolioSnapshot {
     var capturedAt: Date
+    var market: PortfolioMarket
     var currency: String
     var invested: Double
     var proceeds: Double
@@ -171,16 +221,148 @@ struct PortfolioSnapshot {
     }
 }
 
+struct PortfolioExchangeRates: Sendable {
+    private var usdToCurrency: [String: [StockChartPoint]]
+
+    init(usdToCurrency: [String: [StockChartPoint]] = [:]) {
+        self.usdToCurrency = usdToCurrency
+    }
+
+    func convert(_ amount: Double, from source: String, to target: String, at date: Date) -> Double? {
+        guard let sourceToUSD = rateToUSD(for: source, at: date),
+              let usdToTarget = rateFromUSD(for: target, at: date) else {
+            return nil
+        }
+        return amount * sourceToUSD * usdToTarget
+    }
+
+    func convert(summary: PortfolioSummary, to currency: String, at date: Date) -> PortfolioCurrencySummary? {
+        let target = normalizedCurrency(currency)
+        var converted = PortfolioCurrencySummary(currency: target)
+        for native in summary.currencies.values {
+            guard let factor = convert(1, from: native.currency, to: target, at: date) else {
+                return nil
+            }
+            converted.grossInvested += native.grossInvested * factor
+            converted.grossProceeds += native.grossProceeds * factor
+            converted.marketValue += native.marketValue * factor
+            converted.cashBalance += native.cashBalance * factor
+            converted.netWorth += native.netWorth * factor
+            converted.realizedPnl += native.realizedPnl * factor
+            converted.unrealizedPnl += native.unrealizedPnl * factor
+            converted.dividends += native.dividends * factor
+            converted.totalPnl += native.totalPnl * factor
+            converted.hasFundingRecords = converted.hasFundingRecords || native.hasFundingRecords
+        }
+        return converted
+    }
+
+    private func rateToUSD(for currency: String, at date: Date) -> Double? {
+        let normalized = normalizedCurrency(currency)
+        guard normalized != "USD", let rate = rateFromUSD(for: normalized, at: date), rate > 0 else {
+            return normalized == "USD" ? 1 : nil
+        }
+        return 1 / rate
+    }
+
+    private func rateFromUSD(for currency: String, at date: Date) -> Double? {
+        let normalized = normalizedCurrency(currency)
+        guard normalized != "USD" else { return 1 }
+        guard let points = usdToCurrency[normalized], !points.isEmpty else { return nil }
+        return (points.last(where: { $0.date <= date }) ?? points.first)?.price
+    }
+
+    private func normalizedCurrency(_ currency: String) -> String {
+        switch currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "USDT", "USDC": return "USD"
+        case "CNH": return "CNY"
+        default: return currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        }
+    }
+}
+
+enum PortfolioHistoryBuilder {
+    static func rebuild(
+        transactions: [PortfolioTransaction],
+        assets: [DisplayAsset],
+        priceHistories: [String: [StockChartPoint]],
+        exchangeRates: PortfolioExchangeRates,
+        now: Date = Date()
+    ) -> [PortfolioSnapshot] {
+        guard let firstTransaction = transactions.map(\.occurredAt).min() else { return [] }
+        let calendar = Calendar(identifier: .gregorian)
+        let firstDay = calendar.startOfDay(for: firstTransaction)
+        var dates = Set<Date>()
+
+        for points in priceHistories.values {
+            for point in points where point.date >= firstDay {
+                dates.insert(calendar.startOfDay(for: point.date))
+            }
+        }
+        for transaction in transactions where transaction.occurredAt >= firstDay {
+            dates.insert(calendar.startOfDay(for: transaction.occurredAt))
+        }
+        dates.insert(calendar.startOfDay(for: now))
+
+        let liveAssets = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
+        let sortedDates = dates.sorted()
+        var snapshots: [PortfolioSnapshot] = []
+        snapshots.reserveCapacity(sortedDates.count * PortfolioMarket.allCases.count * 3)
+
+        for day in sortedDates {
+            let dayEnd = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: day) ?? day
+            let datedTransactions = transactions.filter { $0.occurredAt <= dayEnd }
+            let datedAssets = assets.map { asset -> DisplayAsset in
+                var historical = asset
+                if let points = priceHistories[asset.id],
+                   let price = (points.last(where: { $0.date <= dayEnd }) ?? points.first)?.price {
+                    historical.currentPrice = price
+                } else if let current = liveAssets[asset.id]?.currentPrice {
+                    historical.currentPrice = current
+                }
+                return historical
+            }
+
+            for market in PortfolioMarket.allCases {
+                let summary = PortfolioCalculator.calculate(
+                    transactions: datedTransactions,
+                    assets: datedAssets,
+                    market: market
+                )
+                for currency in ["USD", "HKD", "CNY"] {
+                    guard let converted = exchangeRates.convert(summary: summary, to: currency, at: dayEnd) else { continue }
+                    snapshots.append(PortfolioSnapshot(
+                        capturedAt: dayEnd,
+                        market: market,
+                        currency: currency,
+                        invested: converted.grossInvested,
+                        proceeds: converted.grossProceeds,
+                        marketValue: converted.marketValue,
+                        cashBalance: converted.hasFundingRecords ? converted.cashBalance : nil,
+                        netWorth: converted.hasFundingRecords ? converted.netWorth : nil,
+                        realizedPnl: converted.realizedPnl,
+                        unrealizedPnl: converted.unrealizedPnl,
+                        totalPnl: converted.totalPnl
+                    ))
+                }
+            }
+        }
+        return snapshots
+    }
+}
+
 private let careSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 final class PortfolioStore {
     private let databaseURL: URL
+    private let journalMode: String
     private var database: OpaquePointer?
 
-    init(databaseURL overrideURL: URL? = nil) {
+    init(databaseURL overrideURL: URL? = nil, journalMode: String = "WAL") {
         let directory = overrideURL?.deletingLastPathComponent() ?? ConfigStore.appSupportURL
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         databaseURL = overrideURL ?? directory.appendingPathComponent("CareAssets.sqlite3")
+        self.journalMode = journalMode
         do {
             try open()
             try createSchema()
@@ -190,16 +372,94 @@ final class PortfolioStore {
     }
 
     deinit {
-        if let database {
-            sqlite3_close(database)
+        close()
+    }
+
+    func close() {
+        guard let database else { return }
+        sqlite3_close(database)
+        self.database = nil
+    }
+
+    func loadOrCreateConfiguration(legacyConfig: AppConfig?) -> AppConfig {
+        guard hasMetadata("sqlite_configuration_v1") else {
+            let initial = legacyConfig ?? AppConfig.defaultConfig
+            do {
+                try saveConfiguration(initial)
+            } catch {
+                NSLog("CareAssets configuration database migration failed: \(error.localizedDescription)")
+            }
+            return initial
         }
+        return loadConfiguration()
+    }
+
+    func loadConfiguration() -> AppConfig {
+        var config = AppConfig.defaultConfig
+        config.refreshIntervalSeconds = Int(setting("refresh_interval_seconds") ?? "") ?? config.refreshIntervalSeconds
+        config.menuBarMaxItems = Int(setting("menu_bar_max_items") ?? "") ?? config.menuBarMaxItems
+        config.stockDisplayCurrency = setting("stock_display_currency") ?? config.stockDisplayCurrency
+        config.priceColorMode = setting("price_color_mode").flatMap(PriceColorMode.init(rawValue:)) ?? config.priceColorMode
+        config.statusBarBackgroundMode = setting("status_bar_background_mode").flatMap(StatusBarBackgroundMode.init(rawValue:)) ?? config.statusBarBackgroundMode
+        config.stockDataSource = setting("stock_data_source").flatMap(StockDataSource.init(rawValue:)) ?? config.stockDataSource
+        config.stockChartPeriod = setting("stock_chart_period").flatMap(StockChartPeriod.init(rawValue:)) ?? config.stockChartPeriod
+        config.showPositionSummary = setting("show_position_summary") == "1"
+        config.iCloudDriveSyncEnabled = setting("icloud_drive_sync_enabled") == "1"
+        config.syncFolderPath = setting("sync_folder_path")
+        config.language = setting("language").flatMap(AppLanguage.init(rawValue:)) ?? config.language
+        config.assets = loadTrackedAssets()
+        return config
+    }
+
+    func saveConfiguration(_ config: AppConfig) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION")
+        do {
+            try setSetting("refresh_interval_seconds", value: String(config.refreshIntervalSeconds))
+            try setSetting("menu_bar_max_items", value: String(config.menuBarMaxItems))
+            try setSetting("stock_display_currency", value: config.stockDisplayCurrency)
+            try setSetting("price_color_mode", value: config.priceColorMode.rawValue)
+            try setSetting("status_bar_background_mode", value: config.statusBarBackgroundMode.rawValue)
+            try setSetting("stock_data_source", value: config.stockDataSource.rawValue)
+            try setSetting("stock_chart_period", value: config.stockChartPeriod.rawValue)
+            try setSetting("show_position_summary", value: config.showPositionSummary ? "1" : "0")
+            try setSetting("icloud_drive_sync_enabled", value: config.iCloudDriveSyncEnabled ? "1" : "0")
+            try setSetting("sync_folder_path", value: config.syncFolderPath)
+            try setSetting("language", value: config.language.rawValue)
+            try replaceTrackedAssets(config.assets)
+            try setMetadata("sqlite_configuration_v1", value: "1")
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
+    }
+
+    func replaceSyncSnapshot(
+        assets: [TrackedAsset],
+        accounts: [PortfolioAccount],
+        transactions: [PortfolioTransaction]
+    ) throws {
+        var syncConfiguration = AppConfig.defaultConfig
+        syncConfiguration.assets = assets
+        try saveConfiguration(syncConfiguration)
+        try replaceLedger(accounts: accounts, transactions: transactions)
+        try setMetadata("sqlite_sync_snapshot_v1", value: "1")
+        try setMetadata("sqlite_sync_snapshot_modified_at", value: String(Date().timeIntervalSince1970))
+    }
+
+    func loadSyncSnapshot() throws -> (assets: [TrackedAsset], accounts: [PortfolioAccount], transactions: [PortfolioTransaction]) {
+        guard hasMetadata("sqlite_sync_snapshot_v1") else {
+            throw NSError(domain: "CareAssets.AssetSync", code: 1, userInfo: [NSLocalizedDescriptionKey: "同步数据库格式不正确。"])
+        }
+        return (loadTrackedAssets(), loadAccounts(), loadTransactions())
     }
 
     func loadTransactions() -> [PortfolioTransaction] {
         guard let database else { return [] }
         let sql = """
         SELECT id, occurred_at, kind, asset_id, asset_name, symbol, asset_type,
-               currency, quantity, unit_price, amount, fee, tax, note
+               currency, quantity, unit_price, amount, fee, tax, note,
+               account_id, target_account_id, target_currency, target_amount
         FROM transactions
         ORDER BY occurred_at ASC, created_at ASC
         """
@@ -225,7 +485,11 @@ final class PortfolioStore {
                 amount: sqlite3_column_double(statement, 10),
                 fee: sqlite3_column_double(statement, 11),
                 tax: sqlite3_column_double(statement, 12),
-                note: text(statement, 13) ?? ""
+                note: text(statement, 13) ?? "",
+                accountID: text(statement, 14).flatMap(UUID.init(uuidString:)),
+                targetAccountID: text(statement, 15).flatMap(UUID.init(uuidString:)),
+                targetCurrency: text(statement, 16) ?? "",
+                targetAmount: sqlite3_column_double(statement, 17)
             )
             transactions.append(transaction)
         }
@@ -233,11 +497,54 @@ final class PortfolioStore {
     }
 
     func insert(_ transaction: PortfolioTransaction) throws {
+        try insertTransaction(transaction, createdAt: Date(), updatedAt: Date())
+    }
+
+    func replaceLedger(accounts: [PortfolioAccount], transactions: [PortfolioTransaction]) throws {
+        let accountIDs = Set(accounts.map(\.id))
+        guard accountIDs.count == accounts.count else {
+            throw NSError(domain: "CareAssets.PortfolioDatabase", code: 5, userInfo: [NSLocalizedDescriptionKey: "同步数据中存在重复账户。"])
+        }
+        guard transactions.allSatisfy({ transaction in
+            (transaction.accountID == nil || accountIDs.contains(transaction.accountID!)) &&
+            (transaction.targetAccountID == nil || accountIDs.contains(transaction.targetAccountID!))
+        }) else {
+            throw NSError(domain: "CareAssets.PortfolioDatabase", code: 6, userInfo: [NSLocalizedDescriptionKey: "同步交易引用了不存在的账户。"])
+        }
+
+        try execute("BEGIN IMMEDIATE TRANSACTION")
+        do {
+            try execute("DELETE FROM transactions")
+            try execute("DELETE FROM portfolio_accounts")
+            try execute("DELETE FROM portfolio_snapshots")
+            for account in accounts {
+                try insert(account)
+            }
+            for transaction in transactions {
+                try insertTransaction(
+                    transaction,
+                    createdAt: transaction.occurredAt,
+                    updatedAt: transaction.occurredAt
+                )
+            }
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
+    }
+
+    private func insertTransaction(
+        _ transaction: PortfolioTransaction,
+        createdAt: Date,
+        updatedAt: Date
+    ) throws {
         let sql = """
         INSERT INTO transactions
         (id, occurred_at, kind, asset_id, asset_name, symbol, asset_type, currency,
-         quantity, unit_price, amount, fee, tax, note, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         quantity, unit_price, amount, fee, tax, note, account_id, target_account_id,
+         target_currency, target_amount, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try perform(sql) { statement in
             bind(statement, index: 1, value: transaction.id.uuidString)
@@ -254,8 +561,12 @@ final class PortfolioStore {
             bind(statement, index: 12, value: transaction.fee)
             bind(statement, index: 13, value: transaction.tax)
             bind(statement, index: 14, value: transaction.note)
-            bind(statement, index: 15, value: Date().timeIntervalSince1970)
-            bind(statement, index: 16, value: Date().timeIntervalSince1970)
+            bind(statement, index: 15, value: transaction.accountID?.uuidString)
+            bind(statement, index: 16, value: transaction.targetAccountID?.uuidString)
+            bind(statement, index: 17, value: transaction.targetCurrency.uppercased())
+            bind(statement, index: 18, value: transaction.targetAmount)
+            bind(statement, index: 19, value: createdAt.timeIntervalSince1970)
+            bind(statement, index: 20, value: updatedAt.timeIntervalSince1970)
         }
     }
 
@@ -264,7 +575,7 @@ final class PortfolioStore {
         UPDATE transactions
         SET occurred_at = ?, kind = ?, asset_id = ?, asset_name = ?, symbol = ?, asset_type = ?,
             currency = ?, quantity = ?, unit_price = ?, amount = ?, fee = ?, tax = ?, note = ?,
-            updated_at = ?
+            account_id = ?, target_account_id = ?, target_currency = ?, target_amount = ?, updated_at = ?
         WHERE id = ?
         """
         try perform(sql) { statement in
@@ -281,14 +592,124 @@ final class PortfolioStore {
             bind(statement, index: 11, value: transaction.fee)
             bind(statement, index: 12, value: transaction.tax)
             bind(statement, index: 13, value: transaction.note)
-            bind(statement, index: 14, value: Date().timeIntervalSince1970)
-            bind(statement, index: 15, value: transaction.id.uuidString)
+            bind(statement, index: 14, value: transaction.accountID?.uuidString)
+            bind(statement, index: 15, value: transaction.targetAccountID?.uuidString)
+            bind(statement, index: 16, value: transaction.targetCurrency.uppercased())
+            bind(statement, index: 17, value: transaction.targetAmount)
+            bind(statement, index: 18, value: Date().timeIntervalSince1970)
+            bind(statement, index: 19, value: transaction.id.uuidString)
         }
     }
 
     func delete(id: UUID) throws {
         try perform("DELETE FROM transactions WHERE id = ?") { statement in
             bind(statement, index: 1, value: id.uuidString)
+        }
+    }
+
+    func loadTrackedAssets() -> [TrackedAsset] {
+        guard let database,
+              let statement = prepare("SELECT type, name, symbol, canonical_symbol, visible_in_menu_bar FROM tracked_assets ORDER BY sort_index ASC", database: database) else { return [] }
+        defer { sqlite3_finalize(statement) }
+
+        var assets: [TrackedAsset] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let typeText = text(statement, 0),
+                  let type = AssetType(rawValue: typeText),
+                  let name = text(statement, 1),
+                  let symbol = text(statement, 2) else { continue }
+            assets.append(TrackedAsset(
+                type: type,
+                name: name,
+                symbol: symbol,
+                canonicalSymbol: text(statement, 3),
+                visibleInMenuBar: sqlite3_column_int(statement, 4) != 0
+            ))
+        }
+        return assets
+    }
+
+    func loadAccounts() -> [PortfolioAccount] {
+        guard let database,
+              let statement = prepare("SELECT id, name, created_at FROM portfolio_accounts ORDER BY created_at ASC, name ASC", database: database) else { return [] }
+        defer { sqlite3_finalize(statement) }
+
+        var accounts: [PortfolioAccount] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let idText = text(statement, 0), let id = UUID(uuidString: idText) else { continue }
+            accounts.append(PortfolioAccount(
+                id: id,
+                name: text(statement, 1) ?? "未命名账户",
+                createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
+            ))
+        }
+        return accounts
+    }
+
+    @discardableResult
+    func createAccount(name: String) throws -> PortfolioAccount {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw NSError(domain: "CareAssets.PortfolioDatabase", code: 2, userInfo: [NSLocalizedDescriptionKey: "账户名称不能为空"])
+        }
+        let account = PortfolioAccount(name: trimmedName)
+        try insert(account)
+        return account
+    }
+
+    func renameAccount(id: UUID, name: String) throws {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw NSError(domain: "CareAssets.PortfolioDatabase", code: 3, userInfo: [NSLocalizedDescriptionKey: "账户名称不能为空"])
+        }
+        try perform("UPDATE portfolio_accounts SET name = ? WHERE id = ?") { statement in
+            bind(statement, index: 1, value: trimmedName)
+            bind(statement, index: 2, value: id.uuidString)
+        }
+    }
+
+    func deleteAccount(id: UUID) throws {
+        guard let database,
+              let statement = prepare("SELECT COUNT(*) FROM transactions WHERE account_id = ? OR target_account_id = ?", database: database) else {
+            throw databaseError()
+        }
+        defer { sqlite3_finalize(statement) }
+        bind(statement, index: 1, value: id.uuidString)
+        bind(statement, index: 2, value: id.uuidString)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw databaseError() }
+        guard sqlite3_column_int(statement, 0) == 0 else {
+            throw NSError(domain: "CareAssets.PortfolioDatabase", code: 4, userInfo: [NSLocalizedDescriptionKey: "该账户已有交易记录，不能删除。请先将交易改到其他账户。"])
+        }
+        try perform("DELETE FROM portfolio_accounts WHERE id = ?") { statement in
+            bind(statement, index: 1, value: id.uuidString)
+        }
+    }
+
+    func migrateTransactionsToHSBCHKIfNeeded() {
+        let metadataKey = "transactions_assigned_hsbc_hk_v1"
+        guard !hasMetadata(metadataKey) else { return }
+        do {
+            let account = try existingOrCreateAccount(named: "HSBC HK")
+            try perform("UPDATE transactions SET account_id = ?") { statement in
+                bind(statement, index: 1, value: account.id.uuidString)
+            }
+            try setMetadata(metadataKey, value: "1")
+        } catch {
+            NSLog("CareAssets account migration failed: \(error.localizedDescription)")
+        }
+    }
+
+    @discardableResult
+    func resetSnapshotsForPortfolioHistoryV2IfNeeded() -> Bool {
+        let metadataKey = "portfolio_history_v2"
+        guard !hasMetadata(metadataKey) else { return false }
+        do {
+            try replaceSnapshots([])
+            try setMetadata(metadataKey, value: "1")
+            return true
+        } catch {
+            NSLog("CareAssets portfolio snapshot reset failed: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -330,6 +751,7 @@ final class PortfolioStore {
                 guard force || shouldRecordSnapshot(currency: currency.currency, at: date) else { continue }
                 let snapshot = PortfolioSnapshot(
                     capturedAt: date,
+                    market: .all,
                     currency: currency.currency,
                     invested: currency.grossInvested,
                     proceeds: currency.grossProceeds,
@@ -350,7 +772,7 @@ final class PortfolioStore {
     func loadSnapshots(currency: String, limit: Int = 4000) -> [PortfolioSnapshot] {
         guard let database else { return [] }
         let sql = """
-        SELECT captured_at, currency, invested, proceeds, market_value, cash_balance,
+        SELECT captured_at, market, currency, invested, proceeds, market_value, cash_balance,
                net_worth, realized_pnl, unrealized_pnl, total_pnl
         FROM portfolio_snapshots
         WHERE currency = ?
@@ -366,15 +788,16 @@ final class PortfolioStore {
         while sqlite3_step(statement) == SQLITE_ROW {
             snapshots.append(PortfolioSnapshot(
                 capturedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
-                currency: text(statement, 1) ?? currency,
-                invested: sqlite3_column_double(statement, 2),
-                proceeds: sqlite3_column_double(statement, 3),
-                marketValue: sqlite3_column_double(statement, 4),
-                cashBalance: number(statement, 5),
-                netWorth: number(statement, 6),
-                realizedPnl: sqlite3_column_double(statement, 7),
-                unrealizedPnl: sqlite3_column_double(statement, 8),
-                totalPnl: sqlite3_column_double(statement, 9)
+                market: PortfolioMarket(rawValue: text(statement, 1) ?? "") ?? .all,
+                currency: text(statement, 2) ?? currency,
+                invested: sqlite3_column_double(statement, 3),
+                proceeds: sqlite3_column_double(statement, 4),
+                marketValue: sqlite3_column_double(statement, 5),
+                cashBalance: number(statement, 6),
+                netWorth: number(statement, 7),
+                realizedPnl: sqlite3_column_double(statement, 8),
+                unrealizedPnl: sqlite3_column_double(statement, 9),
+                totalPnl: sqlite3_column_double(statement, 10)
             ))
         }
         return snapshots.reversed()
@@ -383,7 +806,7 @@ final class PortfolioStore {
     func loadSnapshots(limit: Int = 4000) -> [PortfolioSnapshot] {
         guard let database else { return [] }
         let sql = """
-        SELECT captured_at, currency, invested, proceeds, market_value, cash_balance,
+        SELECT captured_at, market, currency, invested, proceeds, market_value, cash_balance,
                net_worth, realized_pnl, unrealized_pnl, total_pnl
         FROM portfolio_snapshots
         ORDER BY captured_at ASC
@@ -397,18 +820,33 @@ final class PortfolioStore {
         while sqlite3_step(statement) == SQLITE_ROW {
             snapshots.append(PortfolioSnapshot(
                 capturedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
-                currency: text(statement, 1) ?? "",
-                invested: sqlite3_column_double(statement, 2),
-                proceeds: sqlite3_column_double(statement, 3),
-                marketValue: sqlite3_column_double(statement, 4),
-                cashBalance: number(statement, 5),
-                netWorth: number(statement, 6),
-                realizedPnl: sqlite3_column_double(statement, 7),
-                unrealizedPnl: sqlite3_column_double(statement, 8),
-                totalPnl: sqlite3_column_double(statement, 9)
+                market: PortfolioMarket(rawValue: text(statement, 1) ?? "") ?? .all,
+                currency: text(statement, 2) ?? "",
+                invested: sqlite3_column_double(statement, 3),
+                proceeds: sqlite3_column_double(statement, 4),
+                marketValue: sqlite3_column_double(statement, 5),
+                cashBalance: number(statement, 6),
+                netWorth: number(statement, 7),
+                realizedPnl: sqlite3_column_double(statement, 8),
+                unrealizedPnl: sqlite3_column_double(statement, 9),
+                totalPnl: sqlite3_column_double(statement, 10)
             ))
         }
         return snapshots
+    }
+
+    func replaceSnapshots(_ snapshots: [PortfolioSnapshot]) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION")
+        do {
+            try execute("DELETE FROM portfolio_snapshots")
+            for snapshot in snapshots {
+                try insert(snapshot)
+            }
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
     }
 
     private func shouldRecordSnapshot(currency: String, at date: Date) -> Bool {
@@ -427,7 +865,7 @@ final class PortfolioStore {
             throw databaseError()
         }
         try execute("PRAGMA foreign_keys = ON")
-        try execute("PRAGMA journal_mode = WAL")
+        try execute("PRAGMA journal_mode = \(journalMode)")
     }
 
     private func createSchema() throws {
@@ -437,6 +875,24 @@ final class PortfolioStore {
             value TEXT NOT NULL
         )
         """)
+        try execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL
+        )
+        """)
+        try execute("""
+        CREATE TABLE IF NOT EXISTS tracked_assets (
+            id TEXT PRIMARY KEY NOT NULL,
+            sort_index INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            canonical_symbol TEXT,
+            visible_in_menu_bar INTEGER NOT NULL DEFAULT 0
+        )
+        """)
+        try execute("CREATE INDEX IF NOT EXISTS tracked_assets_sort_index ON tracked_assets(sort_index)")
         try execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id TEXT PRIMARY KEY NOT NULL,
@@ -459,9 +915,22 @@ final class PortfolioStore {
         """)
         try execute("CREATE INDEX IF NOT EXISTS transactions_occurred_at ON transactions(occurred_at)")
         try execute("""
+        CREATE TABLE IF NOT EXISTS portfolio_accounts (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            created_at REAL NOT NULL
+        )
+        """)
+        try? execute("ALTER TABLE transactions ADD COLUMN account_id TEXT")
+        try? execute("ALTER TABLE transactions ADD COLUMN target_account_id TEXT")
+        try? execute("ALTER TABLE transactions ADD COLUMN target_currency TEXT NOT NULL DEFAULT ''")
+        try? execute("ALTER TABLE transactions ADD COLUMN target_amount REAL NOT NULL DEFAULT 0")
+        try execute("CREATE INDEX IF NOT EXISTS transactions_account_id ON transactions(account_id)")
+        try execute("""
         CREATE TABLE IF NOT EXISTS portfolio_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             captured_at REAL NOT NULL,
+            market TEXT NOT NULL DEFAULT 'all',
             currency TEXT NOT NULL,
             invested REAL NOT NULL,
             proceeds REAL NOT NULL,
@@ -473,7 +942,8 @@ final class PortfolioStore {
             total_pnl REAL NOT NULL
         )
         """)
-        try execute("CREATE INDEX IF NOT EXISTS snapshots_currency_date ON portfolio_snapshots(currency, captured_at)")
+        try? execute("ALTER TABLE portfolio_snapshots ADD COLUMN market TEXT NOT NULL DEFAULT 'all'")
+        try execute("CREATE INDEX IF NOT EXISTS snapshots_market_currency_date ON portfolio_snapshots(market, currency, captured_at)")
     }
 
     private func hasMetadata(_ key: String) -> Bool {
@@ -482,6 +952,66 @@ final class PortfolioStore {
         defer { sqlite3_finalize(statement) }
         bind(statement, index: 1, value: key)
         return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    private func existingOrCreateAccount(named name: String) throws -> PortfolioAccount {
+        if let existing = loadAccounts().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            return existing
+        }
+        return try createAccount(name: name)
+    }
+
+    private func insert(_ account: PortfolioAccount) throws {
+        try perform("INSERT INTO portfolio_accounts(id, name, created_at) VALUES (?, ?, ?)") { statement in
+            bind(statement, index: 1, value: account.id.uuidString)
+            bind(statement, index: 2, value: account.name)
+            bind(statement, index: 3, value: account.createdAt.timeIntervalSince1970)
+        }
+    }
+
+    private func replaceTrackedAssets(_ assets: [TrackedAsset]) throws {
+        var seen = Set<String>()
+        let uniqueAssets = assets.filter { asset in
+            seen.insert(assetIdentity(for: asset)).inserted
+        }
+        try execute("DELETE FROM tracked_assets")
+        for (index, asset) in uniqueAssets.enumerated() {
+            try perform("""
+            INSERT INTO tracked_assets
+            (id, sort_index, type, name, symbol, canonical_symbol, visible_in_menu_bar)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """) { statement in
+                bind(statement, index: 1, value: assetIdentity(for: asset))
+                bind(statement, index: 2, value: Int32(index))
+                bind(statement, index: 3, value: asset.type.rawValue)
+                bind(statement, index: 4, value: asset.name)
+                bind(statement, index: 5, value: asset.symbol)
+                bind(statement, index: 6, value: asset.canonicalSymbol)
+                bind(statement, index: 7, value: asset.visibleInMenuBar ? Int32(1) : Int32(0))
+            }
+        }
+    }
+
+    private func setting(_ key: String) -> String? {
+        guard let database,
+              let statement = prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1", database: database) else { return nil }
+        defer { sqlite3_finalize(statement) }
+        bind(statement, index: 1, value: key)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return text(statement, 0)
+    }
+
+    private func setSetting(_ key: String, value: String?) throws {
+        guard let value else {
+            try perform("DELETE FROM app_settings WHERE key = ?") { statement in
+                bind(statement, index: 1, value: key)
+            }
+            return
+        }
+        try perform("INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)") { statement in
+            bind(statement, index: 1, value: key)
+            bind(statement, index: 2, value: value)
+        }
     }
 
     private func setMetadata(_ key: String, value: String) throws {
@@ -494,20 +1024,21 @@ final class PortfolioStore {
     private func insert(_ snapshot: PortfolioSnapshot) throws {
         try perform("""
         INSERT INTO portfolio_snapshots
-        (captured_at, currency, invested, proceeds, market_value, cash_balance,
+        (captured_at, market, currency, invested, proceeds, market_value, cash_balance,
          net_worth, realized_pnl, unrealized_pnl, total_pnl)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """) { statement in
             bind(statement, index: 1, value: snapshot.capturedAt.timeIntervalSince1970)
-            bind(statement, index: 2, value: snapshot.currency.uppercased())
-            bind(statement, index: 3, value: snapshot.invested)
-            bind(statement, index: 4, value: snapshot.proceeds)
-            bind(statement, index: 5, value: snapshot.marketValue)
-            bind(statement, index: 6, value: snapshot.cashBalance)
-            bind(statement, index: 7, value: snapshot.netWorth)
-            bind(statement, index: 8, value: snapshot.realizedPnl)
-            bind(statement, index: 9, value: snapshot.unrealizedPnl)
-            bind(statement, index: 10, value: snapshot.totalPnl)
+            bind(statement, index: 2, value: snapshot.market.rawValue)
+            bind(statement, index: 3, value: snapshot.currency.uppercased())
+            bind(statement, index: 4, value: snapshot.invested)
+            bind(statement, index: 5, value: snapshot.proceeds)
+            bind(statement, index: 6, value: snapshot.marketValue)
+            bind(statement, index: 7, value: snapshot.cashBalance)
+            bind(statement, index: 8, value: snapshot.netWorth)
+            bind(statement, index: 9, value: snapshot.realizedPnl)
+            bind(statement, index: 10, value: snapshot.unrealizedPnl)
+            bind(statement, index: 11, value: snapshot.totalPnl)
         }
     }
 
@@ -587,6 +1118,7 @@ private func portfolioCurrency(for asset: TrackedAsset) -> String {
 
 enum PortfolioCalculator {
     private struct WorkingPosition {
+        var accountID: UUID?
         var name: String
         var symbol: String
         var currency: String
@@ -610,7 +1142,9 @@ enum PortfolioCalculator {
             case .buy, .opening:
                 guard let assetID = transaction.assetID else { continue }
                 let cost = transaction.costAmount
-                var position = working[assetID] ?? WorkingPosition(
+                let positionKey = positionKey(assetID: assetID, accountID: transaction.accountID)
+                var position = working[positionKey] ?? WorkingPosition(
+                    accountID: transaction.accountID,
                     name: transaction.assetName,
                     symbol: transaction.symbol,
                     currency: currency
@@ -618,7 +1152,7 @@ enum PortfolioCalculator {
                 position.quantity += transaction.quantity
                 position.costBasis += cost
                 position.totalInvested += cost
-                working[assetID] = position
+                working[positionKey] = position
                 summary.grossInvested += cost
                 if transaction.kind == .buy {
                     summary.cashBalance -= cost
@@ -626,7 +1160,9 @@ enum PortfolioCalculator {
 
             case .sell:
                 guard let assetID = transaction.assetID else { continue }
-                var position = working[assetID] ?? WorkingPosition(
+                let positionKey = positionKey(assetID: assetID, accountID: transaction.accountID)
+                var position = working[positionKey] ?? WorkingPosition(
+                    accountID: transaction.accountID,
                     name: transaction.assetName,
                     symbol: transaction.symbol,
                     currency: currency
@@ -638,7 +1174,7 @@ enum PortfolioCalculator {
                 position.costBasis = max(0, position.costBasis - soldCost)
                 position.realizedPnl += proceeds - soldCost
                 position.totalProceeds += proceeds
-                working[assetID] = position
+                working[positionKey] = position
                 summary.grossProceeds += proceeds
                 summary.cashBalance += proceeds
                 summary.realizedPnl += proceeds - soldCost
@@ -655,13 +1191,29 @@ enum PortfolioCalculator {
                 summary.cashBalance += transaction.amount
                 summary.dividends += transaction.amount
 
+            case .transfer:
+                summary.cashBalance -= transaction.fee + transaction.tax
+
+            case .exchange:
+                let receivingCurrency = transaction.targetCurrency.uppercased()
+                guard !receivingCurrency.isEmpty,
+                      receivingCurrency != currency,
+                      transaction.targetAmount > 0 else { continue }
+                summary.cashBalance -= transaction.amount + transaction.fee + transaction.tax
+                summaries[currency] = summary
+                var receivingSummary = summaries[receivingCurrency] ?? PortfolioCurrencySummary(currency: receivingCurrency)
+                receivingSummary.cashBalance += transaction.targetAmount
+                summaries[receivingCurrency] = receivingSummary
+                continue
+
             }
             summaries[currency] = summary
         }
 
         let quoteByID = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
         var positions: [PortfolioPosition] = []
-        for (assetID, position) in working {
+        for (positionKey, position) in working {
+            let assetID = assetID(from: positionKey)
             let quote = quoteByID[assetID]
             let currentPrice = quote?.currentPrice
             let marketValue = currentPrice.map { max(0, position.quantity) * $0 }
@@ -669,6 +1221,7 @@ enum PortfolioCalculator {
             let unrealized = marketValue.map { $0 - position.costBasis }
             positions.append(PortfolioPosition(
                 assetID: assetID,
+                accountID: position.accountID,
                 name: quote?.name ?? position.name,
                 symbol: quote?.symbol ?? position.symbol,
                 currency: currentCurrency,
@@ -702,5 +1255,27 @@ enum PortfolioCalculator {
             positions: positions.sorted { $0.symbol.localizedStandardCompare($1.symbol) == .orderedAscending },
             currencies: summaries
         )
+    }
+
+    static func calculate(
+        transactions: [PortfolioTransaction],
+        assets: [DisplayAsset],
+        market: PortfolioMarket
+    ) -> PortfolioSummary {
+        guard market != .all else {
+            return calculate(transactions: transactions, assets: assets)
+        }
+        return calculate(
+            transactions: transactions.filter { market.includes(assetID: $0.assetID) },
+            assets: assets.filter { market.includes(assetID: $0.id) }
+        )
+    }
+
+    private static func positionKey(assetID: String, accountID: UUID?) -> String {
+        "\(accountID?.uuidString ?? "unassigned")|\(assetID)"
+    }
+
+    private static func assetID(from positionKey: String) -> String {
+        String(positionKey.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).last ?? "")
     }
 }

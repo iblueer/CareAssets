@@ -176,9 +176,9 @@ enum L10n {
     static var showPositionSummary: String { text("显示持仓汇总", "Show position summary", zhHant: "顯示持倉彙總", ja: "保有サマリーを表示", ar: "إظهار ملخص المراكز", de: "Positionsübersicht anzeigen", fr: "Afficher le résumé", ko: "보유 요약 표시", ptPT: "Mostrar resumo", es: "Mostrar resumen") }
     static var iCloudDriveAssetSync: String { text("iCloud Drive 同步", "Sync with iCloud Drive", zhHant: "iCloud Drive 同步") }
     static var chooseICloudDriveFolder: String { text("选择 iCloud Drive 文件夹", "Choose an iCloud Drive folder", zhHant: "選擇 iCloud Drive 資料夾") }
-    static var chooseICloudDriveFolderDetail: String { text("CareAssets 会在所选文件夹中保存关注列表和界面配置；交易记录保存在本机数据库中。", "CareAssets will save watchlist and interface settings in the selected folder; transaction records stay in the local database.", zhHant: "CareAssets 會在所選資料夾中儲存關注列表和介面設定；交易記錄保存在本機資料庫中。") }
+    static var chooseICloudDriveFolderDetail: String { text("CareAssets 会在所选文件夹中保存自选、账户和交易记录；统计曲线会在每台设备上重新计算。", "CareAssets will save the watchlist, accounts, and transactions in the selected folder; charts are recalculated on each Mac.", zhHant: "CareAssets 會在所選資料夾中儲存自選、帳戶和交易記錄；統計曲線會在每台裝置上重新計算。") }
     static var positionSyncDirectionTitle: String { text("选择首次同步方向", "Choose the initial sync direction", zhHant: "選擇首次同步方向") }
-    static var assetSyncDirectionDetail: String { text("请选择哪一份数据覆盖另一份。此操作会替换目标端的关注列表、排序和菜单栏显示状态，不包含交易记录。", "Choose which data replaces the other. This replaces the target's watchlist, order, and menu bar visibility, but not transaction records.", zhHant: "請選擇哪一份資料覆蓋另一份。此操作會取代目標端的關注列表、排序和選單列顯示狀態，不包含交易記錄。") }
+    static var assetSyncDirectionDetail: String { text("请选择哪一份数据覆盖另一份。此操作会替换目标端的自选、排序、菜单栏显示状态、账户和交易记录；统计曲线会重新计算。", "Choose which data replaces the other. This replaces the target's watchlist, order, menu bar visibility, accounts, and transactions; charts are recalculated.", zhHant: "請選擇哪一份資料覆蓋另一份。此操作會取代目標端的自選、排序、選單列顯示狀態、帳戶和交易記錄；統計曲線會重新計算。") }
     static var localOverwritesICloud: String { text("本机覆盖 iCloud", "This Mac → iCloud", zhHant: "本機覆蓋 iCloud") }
     static var iCloudOverwritesLocal: String { text("iCloud 覆盖本机", "iCloud → This Mac", zhHant: "iCloud 覆蓋本機") }
     static var assetSyncNoCloudData: String { text("所选文件夹中没有 CareAssets 同步文件。", "No CareAssets sync file exists in the selected folder.", zhHant: "所選資料夾中沒有 CareAssets 同步檔案。") }
@@ -711,26 +711,26 @@ final class ConfigStore {
         return base.appendingPathComponent("CareAssets", isDirectory: true)
     }()
 
-    static let configURL = appSupportURL.appendingPathComponent("config.json")
+    static let legacyConfigURL = appSupportURL.appendingPathComponent("config.json")
 
-    static func loadOrCreate() -> AppConfig {
+    static var hasLegacyConfigFile: Bool {
+        FileManager.default.fileExists(atPath: legacyConfigURL.path)
+    }
+
+    static func loadLegacyConfig() -> AppConfig? {
         let fileManager = FileManager.default
         try? fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
 
-        guard fileManager.fileExists(atPath: configURL.path) else {
-            write(AppConfig.defaultConfig)
-            return AppConfig.defaultConfig
-        }
+        guard fileManager.fileExists(atPath: legacyConfigURL.path) else { return nil }
 
         do {
-            let data = try Data(contentsOf: configURL)
+            let data = try Data(contentsOf: legacyConfigURL)
             var config = try JSONDecoder().decode(AppConfig.self, from: data)
-            if migrate(&config) {
-                // 旧版持仓字段要先交给 PortfolioStore 迁移到 SQLite，之后再写入不含持仓字段的 config。
-            }
+            _ = migrate(&config)
             return config
         } catch {
-            return AppConfig.defaultConfig
+            NSLog("CareAssets legacy config read failed: \(error.localizedDescription)")
+            return nil
         }
     }
 
@@ -756,54 +756,130 @@ final class ConfigStore {
         return changed
     }
 
-    static func write(_ config: AppConfig) {
+    static func archiveLegacyConfig() {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: legacyConfigURL.path) else { return }
+        var backupURL = appSupportURL.appendingPathComponent("config.json.migrated")
+        if fileManager.fileExists(atPath: backupURL.path) {
+            backupURL = appSupportURL.appendingPathComponent("config.json.migrated-\(Int(Date().timeIntervalSince1970))")
+        }
         do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(config)
-            try data.write(to: configURL, options: .atomic)
+            try fileManager.moveItem(at: legacyConfigURL, to: backupURL)
         } catch {
-            NSLog("CareAssets config write failed: \(error.localizedDescription)")
+            NSLog("CareAssets legacy config archive failed: \(error.localizedDescription)")
         }
     }
 }
 
-private struct AssetSyncSnapshot: Codable {
+private struct AssetSyncSnapshot {
+    var assets: [TrackedAsset]
+    var accounts: [PortfolioAccount]?
+    var transactions: [PortfolioTransaction]?
+    var requiresStorageUpgrade: Bool
+}
+
+private struct LegacyAssetSyncSnapshot: Codable {
     var schemaVersion: Int
     var modifiedAt: Date
     var assets: [TrackedAsset]
+    var accounts: [PortfolioAccount]?
+    var transactions: [PortfolioTransaction]?
 }
 
 private enum AssetSyncFileStore {
-    static let fileName = "CareAssets-sync.json"
+    static let fileName = "CareAssets-sync.sqlite3"
+    static let legacyFileName = "CareAssets-sync.json"
 
     static func fileURL(in folderURL: URL) -> URL {
         folderURL.appendingPathComponent(fileName, isDirectory: false)
     }
 
+    static func legacyFileURL(in folderURL: URL) -> URL {
+        folderURL.appendingPathComponent(legacyFileName, isDirectory: false)
+    }
+
     static func read(from folderURL: URL) throws -> (snapshot: AssetSyncSnapshot, data: Data)? {
         let url = fileURL(in: folderURL)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let data = try Data(contentsOf: url)
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: url.path) {
+            let store = PortfolioStore(databaseURL: url, journalMode: "DELETE")
+            defer { store.close() }
+            let snapshot = try store.loadSyncSnapshot()
+            return (
+                AssetSyncSnapshot(
+                    assets: snapshot.assets,
+                    accounts: snapshot.accounts,
+                    transactions: snapshot.transactions,
+                    requiresStorageUpgrade: false
+                ),
+                try Data(contentsOf: url)
+            )
+        }
+
+        let legacyURL = legacyFileURL(in: folderURL)
+        guard fileManager.fileExists(atPath: legacyURL.path) else { return nil }
+        let data = try Data(contentsOf: legacyURL)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let snapshot = try decoder.decode(AssetSyncSnapshot.self, from: data)
-        guard snapshot.schemaVersion == 1 else {
+        let snapshot = try decoder.decode(LegacyAssetSyncSnapshot.self, from: data)
+        guard snapshot.schemaVersion == 1 || snapshot.schemaVersion == 2 else {
             throw NSError(domain: "CareAssets.AssetSync", code: 1)
         }
-        return (snapshot, data)
+        return (
+            AssetSyncSnapshot(
+                assets: snapshot.assets,
+                accounts: snapshot.accounts,
+                transactions: snapshot.transactions,
+                requiresStorageUpgrade: true
+            ),
+            data
+        )
     }
 
     @discardableResult
-    static func write(assets: [TrackedAsset], to folderURL: URL) throws -> Data {
-        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
-        let snapshot = AssetSyncSnapshot(schemaVersion: 1, modifiedAt: Date(), assets: assets)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(snapshot)
-        try data.write(to: fileURL(in: folderURL), options: .atomic)
-        return data
+    static func write(
+        assets: [TrackedAsset],
+        accounts: [PortfolioAccount],
+        transactions: [PortfolioTransaction],
+        to folderURL: URL
+    ) throws -> Data {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let destinationURL = fileURL(in: folderURL)
+        let temporaryURL = folderURL.appendingPathComponent(".CareAssets-sync-\(UUID().uuidString).sqlite3")
+        defer { try? fileManager.removeItem(at: temporaryURL) }
+
+        let store = PortfolioStore(databaseURL: temporaryURL, journalMode: "DELETE")
+        do {
+            try store.replaceSyncSnapshot(assets: assets, accounts: accounts, transactions: transactions)
+            store.close()
+        } catch {
+            store.close()
+            throw error
+        }
+
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            _ = try fileManager.replaceItemAt(destinationURL, withItemAt: temporaryURL)
+        } else {
+            try fileManager.moveItem(at: temporaryURL, to: destinationURL)
+        }
+        archiveLegacyFile(in: folderURL)
+        return try Data(contentsOf: destinationURL)
+    }
+
+    private static func archiveLegacyFile(in folderURL: URL) {
+        let fileManager = FileManager.default
+        let legacyURL = legacyFileURL(in: folderURL)
+        guard fileManager.fileExists(atPath: legacyURL.path) else { return }
+        var backupURL = folderURL.appendingPathComponent("\(legacyFileName).migrated")
+        if fileManager.fileExists(atPath: backupURL.path) {
+            backupURL = folderURL.appendingPathComponent("\(legacyFileName).migrated-\(Int(Date().timeIntervalSince1970))")
+        }
+        do {
+            try fileManager.moveItem(at: legacyURL, to: backupURL)
+        } catch {
+            NSLog("CareAssets legacy sync archive failed: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -1426,6 +1502,10 @@ private struct EastMoneyChartData: Decodable {
     var klines: [String]?
 }
 
+private struct FrankfurterTimeSeriesResponse: Decodable {
+    var rates: [String: [String: Double]]
+}
+
 struct StockChartPoint: Sendable {
     var date: Date
     var price: Double
@@ -1902,6 +1982,66 @@ extension AssetService {
         }
     }
 
+    func fetchPortfolioPriceHistories(
+        assets: [TrackedAsset],
+        dataSource: StockDataSource
+    ) async -> [String: [StockChartPoint]] {
+        await withTaskGroup(of: (String, [StockChartPoint]).self) { group in
+            for asset in assets where asset.type == .stock {
+                group.addTask { [self] in
+                    let sources: [StockDataSource]
+                    switch dataSource {
+                    case .yahooFinance:
+                        sources = [.yahooFinance, .eastMoney]
+                    case .eastMoney, .tencent:
+                        sources = [.eastMoney, .yahooFinance]
+                    }
+                    for source in sources {
+                        if let points = try? await fetchStockChart(asset, dataSource: source, period: .year), !points.isEmpty {
+                            return (assetIdentity(for: asset), points)
+                        }
+                    }
+                    return (assetIdentity(for: asset), [])
+                }
+            }
+
+            var histories: [String: [StockChartPoint]] = [:]
+            for await (assetID, points) in group where !points.isEmpty {
+                histories[assetID] = points
+            }
+            return histories
+        }
+    }
+
+    func fetchPortfolioExchangeRates() async -> PortfolioExchangeRates {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date()
+        let start = calendar.date(byAdding: .year, value: -1, to: now) ?? now
+        let path = "https://api.frankfurter.dev/v1/\(frankfurterDateString(start))..\(frankfurterDateString(now))"
+        var components = URLComponents(string: path)!
+        components.queryItems = [
+            URLQueryItem(name: "base", value: "USD"),
+            URLQueryItem(name: "symbols", value: "HKD,CNY,KRW")
+        ]
+        guard let url = components.url,
+              let data = try? await requestData(from: url, timeoutInterval: 12),
+              let response = try? JSONDecoder().decode(FrankfurterTimeSeriesResponse.self, from: data) else {
+            return PortfolioExchangeRates()
+        }
+
+        var histories: [String: [StockChartPoint]] = [:]
+        for (dateString, rates) in response.rates {
+            guard let date = parseFrankfurterDate(dateString) else { continue }
+            for (currency, rate) in rates where rate.isFinite && rate > 0 {
+                histories[currency, default: []].append(StockChartPoint(date: date, price: rate))
+            }
+        }
+        for currency in histories.keys {
+            histories[currency]?.sort { $0.date < $1.date }
+        }
+        return PortfolioExchangeRates(usdToCurrency: histories)
+    }
+
     private func fetchEastMoneyStockChart(_ asset: TrackedAsset, period: StockChartPeriod) async throws -> [StockChartPoint] {
         guard let secID = eastMoneySecID(for: asset) else {
             throw NSError(domain: "CareAssets.EastMoneyChart", code: 1)
@@ -1949,10 +2089,18 @@ extension AssetService {
     private func fetchYahooStockChart(_ asset: TrackedAsset, period: StockChartPeriod) async throws -> [StockChartPoint] {
         guard let rangeAndInterval = period.yahooRangeAndInterval else { return [] }
         let symbol = yahooStockSymbol(for: asset)
+        return try await fetchYahooChart(
+            symbol: symbol,
+            range: rangeAndInterval.range,
+            interval: rangeAndInterval.interval
+        )
+    }
+
+    private func fetchYahooChart(symbol: String, range: String, interval: String) async throws -> [StockChartPoint] {
         let encodedSymbol = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
         let paths = [
-            "https://query2.finance.yahoo.com/v8/finance/chart/\(encodedSymbol)?range=\(rangeAndInterval.range)&interval=\(rangeAndInterval.interval)",
-            "https://query1.finance.yahoo.com/v8/finance/chart/\(encodedSymbol)?range=\(rangeAndInterval.range)&interval=\(rangeAndInterval.interval)"
+            "https://query2.finance.yahoo.com/v8/finance/chart/\(encodedSymbol)?range=\(range)&interval=\(interval)",
+            "https://query1.finance.yahoo.com/v8/finance/chart/\(encodedSymbol)?range=\(range)&interval=\(interval)"
         ]
         var lastError: Error?
         for path in paths {
@@ -4692,10 +4840,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var previewWindow: NSWindow?
     private var mainWindowController: PortfolioMainWindowController?
 
-    private var config = ConfigStore.loadOrCreate()
+    private var config = AppConfig.defaultConfig
     private var assets: [DisplayAsset] = []
     private var portfolioTransactions: [PortfolioTransaction] = []
+    private var portfolioAccounts: [PortfolioAccount] = []
     private var portfolioSummary = PortfolioSummary.empty
+    private var portfolioExchangeRates = PortfolioExchangeRates()
+    private var portfolioOverviewSummaries: [PortfolioMarket: [String: PortfolioCurrencySummary]] = [:]
+    private var portfolioHistoryTask: Task<Void, Never>?
+    private var portfolioHistoryFingerprint = ""
     private var mainWindowChartStates: [String: StockChartState] = [:]
     private var mainWindowSearchRequestID = 0
     private var timer: Timer?
@@ -4711,10 +4864,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         FontRegistrar.registerBundledFonts()
+        let hasLegacyConfigFile = ConfigStore.hasLegacyConfigFile
+        let legacyConfig = ConfigStore.loadLegacyConfig()
+        config = portfolioStore.loadOrCreateConfiguration(legacyConfig: legacyConfig)
         L10n.appLanguage = config.language
-        portfolioStore.migrateLegacyPositions(from: config.assets)
+        portfolioStore.migrateLegacyPositions(from: legacyConfig?.assets ?? [])
+        portfolioStore.migrateTransactionsToHSBCHKIfNeeded()
+        portfolioStore.resetSnapshotsForPortfolioHistoryV2IfNeeded()
         reloadPortfolioState()
-        ConfigStore.write(config)
+        saveConfiguration()
+        if hasLegacyConfigFile {
+            ConfigStore.archiveLegacyConfig()
+        }
         setupApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         assets = config.assets.map(DisplayAsset.loading)
@@ -5022,7 +5183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func refresh() {
         guard !isRefreshing else { return }
 
-        config = ConfigStore.loadOrCreate()
+        config = portfolioStore.loadConfiguration()
         L10n.appLanguage = config.language
         reloadPortfolioState()
         secondsUntilRefresh = max(10, config.refreshIntervalSeconds)
@@ -5039,10 +5200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     return fetchedByID[id] ?? self.assets.first(where: { $0.id == id }) ?? DisplayAsset.loading(from: asset)
                 }
                 self.reloadPortfolioState()
-                self.portfolioStore.recordSnapshots(summary: self.portfolioSummary)
                 self.isRefreshing = false
                 self.secondsUntilRefresh = max(10, self.config.refreshIntervalSeconds)
                 self.updateViews()
+                self.schedulePortfolioHistoryRebuild()
             }
         }
     }
@@ -5075,15 +5236,139 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func reloadPortfolioState() {
+        portfolioAccounts = portfolioStore.loadAccounts()
         portfolioTransactions = portfolioStore.loadTransactions()
         portfolioSummary = PortfolioCalculator.calculate(transactions: portfolioTransactions, assets: assets)
 
-        let positionsByID = Dictionary(uniqueKeysWithValues: portfolioSummary.positions.map { ($0.assetID, $0) })
         for index in assets.indices {
-            let position = positionsByID[assets[index].id]
-            assets[index].holdingQuantity = position?.quantity
-            assets[index].averageBuyPrice = position?.averageCost
+            let positions = portfolioSummary.positions.filter { $0.assetID == assets[index].id }
+            let quantity = positions.reduce(0) { $0 + $1.quantity }
+            let costBasis = positions.reduce(0) { $0 + $1.costBasis }
+            assets[index].holdingQuantity = quantity > 0 ? quantity : nil
+            assets[index].averageBuyPrice = quantity > 0 ? costBasis / quantity : nil
         }
+        rebuildPortfolioOverviewSummaries()
+    }
+
+    private func saveConfiguration() {
+        do {
+            try portfolioStore.saveConfiguration(config)
+        } catch {
+            NSLog("CareAssets configuration database write failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func rebuildPortfolioOverviewSummaries() {
+        var values: [PortfolioMarket: [String: PortfolioCurrencySummary]] = [:]
+        for market in PortfolioMarket.allCases {
+            let summary = PortfolioCalculator.calculate(
+                transactions: portfolioTransactions,
+                assets: assets,
+                market: market
+            )
+            var currencies: [String: PortfolioCurrencySummary] = [:]
+            for currency in ["USD", "HKD", "CNY"] {
+                if let converted = portfolioExchangeRates.convert(summary: summary, to: currency, at: Date()) {
+                    currencies[currency] = converted
+                }
+            }
+            values[market] = currencies
+        }
+        portfolioOverviewSummaries = values
+    }
+
+    private func schedulePortfolioHistoryRebuild(force: Bool = false) {
+        let fingerprint = portfolioHistoryFingerprintValue()
+        guard force || fingerprint != portfolioHistoryFingerprint else { return }
+
+        portfolioHistoryTask?.cancel()
+        updateViews()
+
+        let transactions = portfolioTransactions
+        let historyAssets = portfolioHistoryAssets()
+        let displayedAssets = portfolioHistoryDisplayAssets(for: historyAssets)
+        let dataSource = config.stockDataSource
+
+        portfolioHistoryTask = Task { [weak self] in
+            guard let self else { return }
+            async let priceHistories = service.fetchPortfolioPriceHistories(assets: historyAssets, dataSource: dataSource)
+            async let exchangeRates = service.fetchPortfolioExchangeRates()
+            let (resolvedPrices, resolvedRates) = await (priceHistories, exchangeRates)
+            guard !Task.isCancelled else { return }
+
+            let snapshots = PortfolioHistoryBuilder.rebuild(
+                transactions: transactions,
+                assets: displayedAssets,
+                priceHistories: resolvedPrices,
+                exchangeRates: resolvedRates
+            )
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                self.portfolioExchangeRates = resolvedRates
+                self.rebuildPortfolioOverviewSummaries()
+                if !transactions.isEmpty && snapshots.isEmpty {
+                    NSLog("CareAssets portfolio history rebuild produced no snapshots")
+                    self.updateViews()
+                    return
+                }
+                do {
+                    try self.portfolioStore.replaceSnapshots(snapshots)
+                    self.portfolioHistoryFingerprint = fingerprint
+                } catch {
+                    NSLog("CareAssets portfolio history rebuild failed: \(error.localizedDescription)")
+                }
+                self.updateViews()
+            }
+        }
+    }
+
+    private func portfolioHistoryFingerprintValue() -> String {
+        portfolioTransactions
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .map { transaction in
+                [
+                    transaction.id.uuidString,
+                    String(transaction.occurredAt.timeIntervalSince1970),
+                    transaction.kind.rawValue,
+                    transaction.assetID ?? "",
+                    transaction.currency,
+                    transaction.accountID?.uuidString ?? "",
+                    transaction.targetAccountID?.uuidString ?? "",
+                    transaction.targetCurrency,
+                    String(transaction.targetAmount),
+                    String(transaction.quantity),
+                    String(transaction.unitPrice),
+                    String(transaction.amount),
+                    String(transaction.fee),
+                    String(transaction.tax)
+                ].joined(separator: "|")
+            }
+            .joined(separator: "\n")
+    }
+
+    private func portfolioHistoryAssets() -> [TrackedAsset] {
+        let transactionAssetIDs = Set(portfolioTransactions.compactMap(\.assetID))
+        var assetsByID = Dictionary(uniqueKeysWithValues: config.assets.map { (self.key(for: $0), $0) })
+        for transaction in portfolioTransactions {
+            guard let assetID = transaction.assetID,
+                  assetsByID[assetID] == nil else { continue }
+            let type = transaction.assetType ?? .stock
+            let prefix = "\(type.rawValue)-"
+            let canonicalSymbol = assetID.hasPrefix(prefix) ? String(assetID.dropFirst(prefix.count)) : nil
+            assetsByID[assetID] = TrackedAsset(
+                type: type,
+                name: transaction.assetName.isEmpty ? transaction.symbol : transaction.assetName,
+                symbol: transaction.symbol,
+                canonicalSymbol: canonicalSymbol,
+                visibleInMenuBar: false
+            )
+        }
+        return assetsByID.values.filter { transactionAssetIDs.contains(self.key(for: $0)) }
+    }
+
+    private func portfolioHistoryDisplayAssets(for historyAssets: [TrackedAsset]) -> [DisplayAsset] {
+        let liveByID = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
+        return historyAssets.map { liveByID[self.key(for: $0)] ?? DisplayAsset.loading(from: $0) }
     }
 
     private func updateMainWindow() {
@@ -5092,8 +5377,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             trackedAssets: config.assets,
             displayAssets: assets,
             summary: portfolioSummary,
+            overviewSummaries: portfolioOverviewSummaries,
             transactions: portfolioTransactions,
-            snapshots: portfolioStore.loadSnapshots(),
+            accounts: portfolioAccounts,
+            snapshots: portfolioStore.loadSnapshots(limit: 20_000),
             positionChartStates: mainWindowChartStates,
             priceColorMode: config.priceColorMode,
             statusBarBackgroundMode: config.statusBarBackgroundMode,
@@ -5119,6 +5406,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
             controller.portfolioViewController.onDeleteTransaction = { [weak self] id in
                 self?.deletePortfolioTransaction(id: id)
+            }
+            controller.portfolioViewController.onCreateAccount = { [weak self] name in
+                self?.createPortfolioAccount(name: name)
+            }
+            controller.portfolioViewController.onRenameAccount = { [weak self] id, name in
+                self?.renamePortfolioAccount(id: id, name: name)
+            }
+            controller.portfolioViewController.onDeleteAccount = { [weak self] id in
+                self?.deletePortfolioAccount(id: id)
             }
             controller.portfolioViewController.onRefresh = { [weak self] in
                 self?.refresh()
@@ -5175,7 +5471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func addPortfolioTransaction(_ transaction: PortfolioTransaction) {
         if transaction.kind == .sell,
            let assetID = transaction.assetID,
-           let position = portfolioSummary.positions.first(where: { $0.assetID == assetID }),
+           let position = portfolioSummary.positions.first(where: { $0.assetID == assetID && $0.accountID == transaction.accountID }),
            transaction.quantity > position.quantity + 0.00000001 {
             showMessageAlert(message: "卖出数量超过当前持仓数量。")
             return
@@ -5184,8 +5480,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         do {
             try portfolioStore.insert(transaction)
             reloadPortfolioState()
-            portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
+            writeAssetSyncIfEnabled()
             updateViews()
+            schedulePortfolioHistoryRebuild(force: true)
         } catch {
             showMessageAlert(message: "保存交易失败：\(error.localizedDescription)")
         }
@@ -5203,8 +5500,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         do {
             try portfolioStore.delete(id: transaction.id)
             reloadPortfolioState()
-            portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
+            writeAssetSyncIfEnabled()
             updateViews()
+            schedulePortfolioHistoryRebuild(force: true)
         } catch {
             showMessageAlert(message: "删除交易失败：\(error.localizedDescription)")
         }
@@ -5217,7 +5515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
            let assetID = transaction.assetID {
             let transactionsWithoutCurrent = portfolioTransactions.filter { $0.id != transaction.id }
             let summaryWithoutCurrent = PortfolioCalculator.calculate(transactions: transactionsWithoutCurrent, assets: assets)
-            let availableQuantity = summaryWithoutCurrent.positions.first(where: { $0.assetID == assetID })?.quantity ?? 0
+            let availableQuantity = summaryWithoutCurrent.positions.first(where: { $0.assetID == assetID && $0.accountID == transaction.accountID })?.quantity ?? 0
             if transaction.quantity > availableQuantity + 0.00000001 {
                 showMessageAlert(message: "卖出数量超过修改前可用持仓数量。")
                 return
@@ -5227,10 +5525,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         do {
             try portfolioStore.update(transaction)
             reloadPortfolioState()
-            portfolioStore.recordSnapshots(summary: portfolioSummary, force: true)
+            writeAssetSyncIfEnabled()
             updateViews()
+            schedulePortfolioHistoryRebuild(force: true)
         } catch {
             showMessageAlert(message: "更新交易失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func createPortfolioAccount(name: String) {
+        do {
+            _ = try portfolioStore.createAccount(name: name)
+            reloadPortfolioState()
+            writeAssetSyncIfEnabled()
+            updateViews()
+        } catch {
+            showMessageAlert(message: "新增账户失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func renamePortfolioAccount(id: UUID, name: String) {
+        do {
+            try portfolioStore.renameAccount(id: id, name: name)
+            reloadPortfolioState()
+            writeAssetSyncIfEnabled()
+            updateViews()
+        } catch {
+            showMessageAlert(message: "重命名账户失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func deletePortfolioAccount(id: UUID) {
+        do {
+            try portfolioStore.deleteAccount(id: id)
+            reloadPortfolioState()
+            writeAssetSyncIfEnabled()
+            updateViews()
+        } catch {
+            showMessageAlert(message: "删除账户失败：\(error.localizedDescription)")
         }
     }
 
@@ -5300,7 +5632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         config.assets.append(asset)
-        ConfigStore.write(config)
+        saveConfiguration()
         writeAssetSyncIfEnabled()
         assets.append(DisplayAsset.loading(from: asset))
         updateViews()
@@ -5310,7 +5642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func setAsset(id: String, visibleInMenuBar: Bool) {
         guard let configIndex = config.assets.firstIndex(where: { key(for: $0) == id }) else { return }
         config.assets[configIndex].visibleInMenuBar = visibleInMenuBar
-        ConfigStore.write(config)
+        saveConfiguration()
         writeAssetSyncIfEnabled()
 
         if let assetIndex = assets.firstIndex(where: { $0.id == id }) {
@@ -5323,7 +5655,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func removeAsset(id: String) {
         config.assets.removeAll { key(for: $0) == id }
         assets.removeAll { $0.id == id }
-        ConfigStore.write(config)
+        saveConfiguration()
         writeAssetSyncIfEnabled()
         updateViews()
     }
@@ -5350,7 +5682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         let insertionIndex = placeAfterTarget ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval
         config.assets.insert(movedAsset, at: min(insertionIndex, config.assets.count))
-        ConfigStore.write(config)
+        saveConfiguration()
         writeAssetSyncIfEnabled()
 
         let displayAssetsByID = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
@@ -5362,40 +5694,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func setPriceColorMode(_ mode: PriceColorMode) {
         config.priceColorMode = mode
-        ConfigStore.write(config)
+        saveConfiguration()
         updateViews()
     }
 
     private func setStatusBarBackgroundMode(_ mode: StatusBarBackgroundMode) {
         config.statusBarBackgroundMode = mode
-        ConfigStore.write(config)
+        saveConfiguration()
         updateViews()
     }
 
     private func setStockDataSource(_ source: StockDataSource) {
         config.stockDataSource = source
         mainWindowChartStates.removeAll()
-        ConfigStore.write(config)
+        saveConfiguration()
         updateViews()
         refresh()
     }
 
     private func setStockChartPeriod(_ period: StockChartPeriod) {
         config.stockChartPeriod = period
-        ConfigStore.write(config)
+        saveConfiguration()
         updateViews()
     }
 
     private func setShowPositionSummary(_ visible: Bool) {
         config.showPositionSummary = visible
-        ConfigStore.write(config)
+        saveConfiguration()
         updateViews()
     }
 
     private func setICloudDriveSyncEnabled(_ enabled: Bool) {
         guard enabled else {
             config.iCloudDriveSyncEnabled = false
-            ConfigStore.write(config)
+            saveConfiguration()
             lastAssetSyncData = nil
             updateViews()
             return
@@ -5408,20 +5740,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         do {
             switch direction {
             case .localToICloud:
-                lastAssetSyncData = try AssetSyncFileStore.write(assets: config.assets, to: folderURL)
+                lastAssetSyncData = try AssetSyncFileStore.write(
+                    assets: config.assets,
+                    accounts: portfolioAccounts,
+                    transactions: portfolioTransactions,
+                    to: folderURL
+                )
             case .iCloudToLocal:
                 guard let cloudData = try AssetSyncFileStore.read(from: folderURL) else {
                     showMessageAlert(message: L10n.assetSyncNoCloudData)
                     return
                 }
                 lastAssetSyncData = cloudData.data
-                applySyncedAssets(cloudData.snapshot.assets)
+                try applySyncedSnapshot(cloudData.snapshot)
+                if cloudData.snapshot.requiresStorageUpgrade {
+                    writeAssetSyncIfEnabled(to: folderURL)
+                }
             case .cancel:
                 return
             }
             config.iCloudDriveSyncEnabled = true
             config.syncFolderPath = folderURL.path
-            ConfigStore.write(config)
+            saveConfiguration()
             assetSyncPollCountdown = 5
             updateViews()
         } catch {
@@ -5485,9 +5825,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         do {
             if let cloudData = try AssetSyncFileStore.read(from: folderURL) {
                 lastAssetSyncData = cloudData.data
-                applySyncedAssets(cloudData.snapshot.assets)
+                try applySyncedSnapshot(cloudData.snapshot)
+                if cloudData.snapshot.requiresStorageUpgrade {
+                    writeAssetSyncIfEnabled(to: folderURL)
+                }
             } else {
-                lastAssetSyncData = try AssetSyncFileStore.write(assets: config.assets, to: folderURL)
+                lastAssetSyncData = try AssetSyncFileStore.write(
+                    assets: config.assets,
+                    accounts: portfolioAccounts,
+                    transactions: portfolioTransactions,
+                    to: folderURL
+                )
             }
             assetSyncPollCountdown = 5
         } catch {
@@ -5506,19 +5854,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             guard let cloudData = try AssetSyncFileStore.read(from: URL(fileURLWithPath: path, isDirectory: true)),
                   cloudData.data != lastAssetSyncData else { return }
             lastAssetSyncData = cloudData.data
-            applySyncedAssets(cloudData.snapshot.assets)
+            try applySyncedSnapshot(cloudData.snapshot)
+            if cloudData.snapshot.requiresStorageUpgrade {
+                writeAssetSyncIfEnabled()
+            }
         } catch {
             NSLog("CareAssets iCloud Drive sync poll failed: \(error.localizedDescription)")
         }
     }
 
-    private func writeAssetSyncIfEnabled() {
-        guard config.iCloudDriveSyncEnabled,
-              let path = config.syncFolderPath else { return }
+    private func writeAssetSyncIfEnabled(to folderURL: URL? = nil) {
+        let destination: URL
+        if let folderURL {
+            destination = folderURL
+        } else {
+            guard config.iCloudDriveSyncEnabled,
+                  let path = config.syncFolderPath else { return }
+            destination = URL(fileURLWithPath: path, isDirectory: true)
+        }
         do {
             lastAssetSyncData = try AssetSyncFileStore.write(
                 assets: config.assets,
-                to: URL(fileURLWithPath: path, isDirectory: true)
+                accounts: portfolioAccounts,
+                transactions: portfolioTransactions,
+                to: destination
             )
             assetSyncPollCountdown = 5
         } catch {
@@ -5527,7 +5886,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    private func applySyncedAssets(_ syncedAssets: [TrackedAsset]) {
+    private func applySyncedSnapshot(_ snapshot: AssetSyncSnapshot) throws {
+        let syncedAssets = snapshot.assets
         var seen = Set<String>()
         let uniqueAssets = syncedAssets.filter { asset in
             let id = key(for: asset)
@@ -5539,7 +5899,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             currentDisplays[asset.id] = asset
         }
         config.assets = uniqueAssets
-        ConfigStore.write(config)
+        saveConfiguration()
         assets = uniqueAssets.map { asset in
             let id = key(for: asset)
             var display = currentDisplays[id] ?? DisplayAsset.loading(from: asset)
@@ -5548,6 +5908,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             display.canonicalSymbol = asset.canonicalSymbol
             display.visibleInMenuBar = asset.visibleInMenuBar
             return display
+        }
+        if let accounts = snapshot.accounts,
+           let transactions = snapshot.transactions {
+            try portfolioStore.replaceLedger(accounts: accounts, transactions: transactions)
+        }
+        reloadPortfolioState()
+        if snapshot.accounts != nil, snapshot.transactions != nil {
+            portfolioHistoryFingerprint = ""
+            schedulePortfolioHistoryRebuild(force: true)
         }
         updateViews()
         refresh()
@@ -5626,7 +5995,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func setLanguage(_ language: AppLanguage) {
         config.language = language
         L10n.appLanguage = language
-        ConfigStore.write(config)
+        saveConfiguration()
         updateViews()
         refresh()
     }
@@ -5800,6 +6169,22 @@ private func eastMoneyDateString(_ date: Date) -> String {
     formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
     formatter.dateFormat = "yyyyMMdd"
     return formatter.string(from: date)
+}
+
+private func frankfurterDateString(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: date)
+}
+
+private func parseFrankfurterDate(_ string: String) -> Date? {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.date(from: string)
 }
 
 private func parseChartDate(_ string: String) -> Date? {
@@ -6146,15 +6531,83 @@ PortfolioTestRunner.run()
 #elseif CAREASSETS_SYNC_TEST
 let testFolder = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 let expectedAssets = AppConfig.defaultConfig.assets
-let writtenData = try AssetSyncFileStore.write(assets: expectedAssets, to: testFolder)
+let expectedAccount = PortfolioAccount(name: "同步测试账户")
+let expectedTransaction = PortfolioTransaction(
+    id: UUID(),
+    occurredAt: Date(timeIntervalSince1970: 1),
+    kind: .deposit,
+    assetID: nil,
+    assetName: "",
+    symbol: "",
+    assetType: nil,
+    currency: "USD",
+    quantity: 0,
+    unitPrice: 0,
+    amount: 100,
+    fee: 0,
+    tax: 0,
+    note: "",
+    accountID: expectedAccount.id
+)
+let writtenData = try AssetSyncFileStore.write(
+    assets: expectedAssets,
+    accounts: [expectedAccount],
+    transactions: [expectedTransaction],
+    to: testFolder
+)
 guard let loaded = try AssetSyncFileStore.read(from: testFolder) else {
     fatalError("Asset sync snapshot was not created")
 }
 let testEncoder = JSONEncoder()
 testEncoder.outputFormatting = [.sortedKeys]
 guard try testEncoder.encode(loaded.snapshot.assets) == testEncoder.encode(expectedAssets),
+      loaded.snapshot.accounts?.count == 1,
+      loaded.snapshot.accounts?.first?.id == expectedAccount.id,
+      loaded.snapshot.accounts?.first?.name == expectedAccount.name,
+      loaded.snapshot.transactions?.map(\.id) == [expectedTransaction.id],
       loaded.data == writtenData else {
     fatalError("Asset sync snapshot round-trip mismatch")
+}
+let rewrittenData = try AssetSyncFileStore.write(
+    assets: expectedAssets,
+    accounts: [expectedAccount],
+    transactions: [expectedTransaction],
+    to: testFolder
+)
+guard let rewrittenSnapshot = try AssetSyncFileStore.read(from: testFolder),
+      rewrittenSnapshot.data == rewrittenData,
+      rewrittenSnapshot.snapshot.transactions?.map(\.id) == [expectedTransaction.id] else {
+    fatalError("Asset sync snapshot replacement failed")
+}
+try FileManager.default.removeItem(at: AssetSyncFileStore.fileURL(in: testFolder))
+let legacyEncoder = JSONEncoder()
+legacyEncoder.dateEncodingStrategy = .iso8601
+let legacyData = try legacyEncoder.encode(LegacyAssetSyncSnapshot(
+    schemaVersion: 1,
+    modifiedAt: Date(timeIntervalSince1970: 0),
+    assets: expectedAssets,
+    accounts: nil,
+    transactions: nil
+))
+try legacyData.write(to: AssetSyncFileStore.legacyFileURL(in: testFolder), options: .atomic)
+guard let legacySnapshot = try AssetSyncFileStore.read(from: testFolder)?.snapshot,
+      legacySnapshot.requiresStorageUpgrade,
+      legacySnapshot.accounts == nil,
+      legacySnapshot.transactions == nil else {
+    fatalError("Legacy asset sync snapshot was not accepted")
+}
+let upgradedData = try AssetSyncFileStore.write(
+    assets: expectedAssets,
+    accounts: [expectedAccount],
+    transactions: [expectedTransaction],
+    to: testFolder
+)
+guard !FileManager.default.fileExists(atPath: AssetSyncFileStore.legacyFileURL(in: testFolder).path),
+      FileManager.default.fileExists(atPath: testFolder.appendingPathComponent("CareAssets-sync.json.migrated").path),
+      let upgradedSnapshot = try AssetSyncFileStore.read(from: testFolder),
+      !upgradedSnapshot.snapshot.requiresStorageUpgrade,
+      upgradedSnapshot.data == upgradedData else {
+    fatalError("Legacy asset sync snapshot was not upgraded")
 }
 print("CareAssets asset sync round-trip passed")
 #else

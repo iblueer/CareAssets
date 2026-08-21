@@ -346,6 +346,9 @@ final class PortfolioMainViewController: NSViewController {
     var onAddTransaction: ((PortfolioTransaction) -> Void)?
     var onUpdateTransaction: ((PortfolioTransaction) -> Void)?
     var onDeleteTransaction: ((UUID) -> Void)?
+    var onCreateAccount: ((String) -> Void)?
+    var onRenameAccount: ((UUID, String) -> Void)?
+    var onDeleteAccount: ((UUID) -> Void)?
     var onRefresh: (() -> Void)?
     var onRequestPositionChart: ((String, StockChartPeriod) -> Void)?
     var onSearchWatchlistAssets: ((String) -> Void)?
@@ -367,6 +370,7 @@ final class PortfolioMainViewController: NSViewController {
     private var displayAssets: [DisplayAsset] = []
     private var summary = PortfolioSummary.empty
     private var transactions: [PortfolioTransaction] = []
+    private var accounts: [PortfolioAccount] = []
     private var snapshots: [PortfolioSnapshot] = []
     private var positionChartStates: [String: StockChartState] = [:]
     private var selectedWatchlistAssetID: String?
@@ -374,13 +378,15 @@ final class PortfolioMainViewController: NSViewController {
     private var requestedWatchlistChartKey: String?
     private var watchlistFilter: WatchlistFilter = .all
     private var isEditingWatchlist = false
-    private var watchlistPaneWidth: CGFloat = 240
+    private var watchlistPaneWidth: CGFloat = 260
     private var watchlistSplitObserver: NSObjectProtocol?
     private var isAddingWatchlistAsset = false
     private var isSearchingWatchlist = false
     private var watchlistSearchResults: [AssetSearchResult] = []
     private var watchlistSearchMessage: String?
     private weak var watchlistSearchField: NSSearchField?
+    private weak var watchlistSearchResultsStack: NSStackView?
+    private var watchlistSearchPanel: NSPanel?
     private var priceColorMode: PriceColorMode = .redFallGreenRise
     private var statusBarBackgroundMode: StatusBarBackgroundMode = .dark
     private var stockDataSource: StockDataSource = .tencent
@@ -390,9 +396,13 @@ final class PortfolioMainViewController: NSViewController {
     private var language: AppLanguage = .system
     private var launchAtLoginEnabled = false
     private var selectedMetric: PortfolioChartMetric = .marketValue
-    private var selectedCurrency = ""
+    private var selectedMarket: PortfolioMarket = .all
+    private var selectedCurrency = "USD"
+    private var overviewSummaries: [PortfolioMarket: [String: PortfolioCurrencySummary]] = [:]
     private var transactionEditorAssets: [TrackedAsset] = []
     private weak var transactionEditorCurrencyField: NSTextField?
+    private var transactionEditorRows: [String: NSView] = [:]
+    private var transactionEditorSections: [String: NSView] = [:]
     private var sectionButtons: [Section: NSButton] = [:]
     private weak var contentView: NSView?
     private weak var titleLabel: NSTextField?
@@ -415,7 +425,9 @@ final class PortfolioMainViewController: NSViewController {
         trackedAssets: [TrackedAsset],
         displayAssets: [DisplayAsset],
         summary: PortfolioSummary,
+        overviewSummaries: [PortfolioMarket: [String: PortfolioCurrencySummary]],
         transactions: [PortfolioTransaction],
+        accounts: [PortfolioAccount],
         snapshots: [PortfolioSnapshot],
         positionChartStates: [String: StockChartState],
         priceColorMode: PriceColorMode,
@@ -430,7 +442,9 @@ final class PortfolioMainViewController: NSViewController {
         self.trackedAssets = trackedAssets
         self.displayAssets = displayAssets
         self.summary = summary
+        self.overviewSummaries = overviewSummaries
         self.transactions = transactions
+        self.accounts = accounts
         self.snapshots = snapshots
         self.positionChartStates = positionChartStates
         self.priceColorMode = priceColorMode
@@ -442,9 +456,6 @@ final class PortfolioMainViewController: NSViewController {
         self.language = language
         self.launchAtLoginEnabled = launchAtLoginEnabled
         normalizeWatchlistSelection()
-        if selectedCurrency.isEmpty || summary.currencies[selectedCurrency] == nil {
-            selectedCurrency = summary.primaryCurrency ?? ""
-        }
         if isViewLoaded {
             renderContent()
         }
@@ -454,9 +465,7 @@ final class PortfolioMainViewController: NSViewController {
         self.watchlistSearchResults = results
         self.isSearchingWatchlist = isSearching
         self.watchlistSearchMessage = message
-        if isViewLoaded, section == .watchlist, isAddingWatchlistAsset {
-            renderContent()
-        }
+        renderWatchlistSearchPanelResults()
     }
 
     private func buildShell() {
@@ -652,6 +661,20 @@ final class PortfolioMainViewController: NSViewController {
         addWatchlist.widthAnchor.constraint(equalToConstant: 100).isActive = true
         addWatchlist.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
+        let manageAccounts = NSButton(title: "管理账户", target: self, action: #selector(manageAccountsClicked(_:)))
+        manageAccounts.isBordered = false
+        manageAccounts.focusRingType = .none
+        manageAccounts.font = appFont(ofSize: 12, weight: .semibold)
+        manageAccounts.contentTintColor = PortfolioTheme.secondaryText
+        manageAccounts.wantsLayer = true
+        manageAccounts.layer?.cornerRadius = 8
+        manageAccounts.layer?.backgroundColor = PortfolioTheme.secondaryActionFill.cgColor
+        manageAccounts.layer?.borderColor = PortfolioTheme.actionBorder.cgColor
+        manageAccounts.layer?.borderWidth = 1
+        manageAccounts.translatesAutoresizingMaskIntoConstraints = false
+        manageAccounts.widthAnchor.constraint(equalToConstant: 84).isActive = true
+        manageAccounts.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -662,6 +685,9 @@ final class PortfolioMainViewController: NSViewController {
         }
         if section == .watchlist {
             headerStack.addArrangedSubview(addWatchlist)
+        }
+        if section == .transactions {
+            headerStack.addArrangedSubview(manageAccounts)
         }
         if section != .settings {
             headerStack.addArrangedSubview(add)
@@ -717,8 +743,8 @@ final class PortfolioMainViewController: NSViewController {
             stack.bottomAnchor.constraint(equalTo: document.bottomAnchor)
         ])
 
-        let currency = selectedCurrency.isEmpty ? "--" : selectedCurrency
-        let selectedSummary = summary.currencies[selectedCurrency]
+        let currency = selectedCurrency
+        let selectedSummary = overviewSummaries[selectedMarket]?[currency]
         let cards = NSStackView()
         cards.orientation = .horizontal
         cards.spacing = 12
@@ -743,6 +769,13 @@ final class PortfolioMainViewController: NSViewController {
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         chartHeader.addArrangedSubview(spacer)
 
+        let marketPopup = NSPopUpButton()
+        marketPopup.addItems(withTitles: PortfolioMarket.allCases.map(\.title))
+        marketPopup.selectItem(withTitle: selectedMarket.title)
+        marketPopup.target = self
+        marketPopup.action = #selector(chartMarketChanged(_:))
+        chartHeader.addArrangedSubview(marketPopup)
+
         let metricPopup = NSPopUpButton()
         metricPopup.addItems(withTitles: PortfolioChartMetric.allCases.map(\.title))
         metricPopup.selectItem(withTitle: selectedMetric.title)
@@ -751,18 +784,17 @@ final class PortfolioMainViewController: NSViewController {
         chartHeader.addArrangedSubview(metricPopup)
 
         let currencyPopup = NSPopUpButton()
-        currencyPopup.addItems(withTitles: summary.currencies.keys.sorted())
-        if !selectedCurrency.isEmpty { currencyPopup.selectItem(withTitle: selectedCurrency) }
+        currencyPopup.addItems(withTitles: ["USD", "HKD", "CNY"])
+        currencyPopup.selectItem(withTitle: selectedCurrency)
         currencyPopup.target = self
         currencyPopup.action = #selector(chartCurrencyChanged(_:))
-        currencyPopup.isEnabled = !summary.currencies.isEmpty
         chartHeader.addArrangedSubview(currencyPopup)
         stack.addArrangedSubview(chartHeader)
 
         let chart = PortfolioChartView()
         chart.metric = selectedMetric
         chart.currency = currency
-        chart.points = snapshots.filter { $0.currency == currency }.compactMap { snapshot in
+        chart.points = snapshots.filter { $0.market == selectedMarket && $0.currency == currency }.compactMap { snapshot in
             guard let value = snapshot.value(for: selectedMetric) else { return nil }
             return PortfolioChartPoint(date: snapshot.capturedAt, value: value)
         }
@@ -771,10 +803,6 @@ final class PortfolioMainViewController: NSViewController {
     }
 
     private func buildWatchlist(in body: NSView) {
-        if isAddingWatchlistAsset {
-            buildWatchlistSearch(in: body)
-            return
-        }
         let items = isEditingWatchlist ? watchlistItems() : filteredWatchlistItems()
         let split = NSSplitView()
         split.isVertical = true
@@ -784,9 +812,9 @@ final class PortfolioMainViewController: NSViewController {
 
         let listPane = makeWatchlistListPane(items)
         split.addArrangedSubview(listPane)
-        listPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
-        listPane.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        listPane.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        listPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        listPane.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        listPane.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         if let selectedItem = items.first(where: { $0.assetID == selectedWatchlistAssetID }) ?? items.first {
             let detailPane = makeWatchlistDetailPane(for: selectedItem)
             detailPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
@@ -796,7 +824,7 @@ final class PortfolioMainViewController: NSViewController {
             detailPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
             split.addArrangedSubview(detailPane)
         }
-        split.setHoldingPriority(NSLayoutConstraint.Priority(300), forSubviewAt: 0)
+        split.setHoldingPriority(.defaultHigh, forSubviewAt: 0)
         split.setHoldingPriority(.defaultLow, forSubviewAt: 1)
 
         NSLayoutConstraint.activate([
@@ -812,15 +840,15 @@ final class PortfolioMainViewController: NSViewController {
                 NotificationCenter.default.removeObserver(watchlistSplitObserver)
             }
             split.layoutSubtreeIfNeeded()
-            let maximumWidth = max(220, split.bounds.width - 360)
-            split.setPosition(min(max(self.watchlistPaneWidth, 220), maximumWidth), ofDividerAt: 0)
+            let maximumWidth = max(260, split.bounds.width - 360)
+            split.setPosition(min(max(self.watchlistPaneWidth, 260), maximumWidth), ofDividerAt: 0)
             split.adjustSubviews()
             self.watchlistSplitObserver = NotificationCenter.default.addObserver(
                 forName: NSSplitView.didResizeSubviewsNotification,
                 object: split,
                 queue: .main
             ) { [weak self, weak split] _ in
-                guard let width = split?.subviews.first?.frame.width, width >= 220 else { return }
+                guard let width = split?.subviews.first?.frame.width, width >= 260 else { return }
                 self?.watchlistPaneWidth = width
             }
             self.requestSelectedWatchlistChartIfNeeded()
@@ -1071,7 +1099,7 @@ final class PortfolioMainViewController: NSViewController {
         if items.isEmpty {
             let message = watchlistFilter == .held
                 ? "暂无持仓\n记录买入后，这里会显示持仓列表。"
-                : "暂无自选\n请先在悬浮窗中添加想要关注的标的。"
+                : "暂无自选\n点击右上角“添加自选”搜索标的。"
             let empty = NSTextField(wrappingLabelWithString: message)
             empty.font = appFont(ofSize: 13, weight: .medium)
             empty.textColor = NSColor.white.withAlphaComponent(0.45)
@@ -1206,6 +1234,9 @@ final class PortfolioMainViewController: NSViewController {
         title.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
         detail.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
         text.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -1218,10 +1249,20 @@ final class PortfolioMainViewController: NSViewController {
         visible.toolTip = "显示在菜单栏"
         visible.widthAnchor.constraint(equalToConstant: 52).isActive = true
 
+        let remove = NSButton(title: "移除", target: self, action: #selector(removeWatchlistAssetClicked(_:)))
+        remove.isBordered = false
+        remove.focusRingType = .none
+        remove.font = appFont(ofSize: 10, weight: .semibold)
+        remove.contentTintColor = NSColor.systemRed.withAlphaComponent(0.9)
+        remove.identifier = NSUserInterfaceItemIdentifier(item.assetID)
+        remove.toolTip = "从自选中移除"
+        remove.widthAnchor.constraint(equalToConstant: 36).isActive = true
+
         row.addArrangedSubview(handle)
         row.addArrangedSubview(text)
         row.addArrangedSubview(spacer)
         row.addArrangedSubview(visible)
+        row.addArrangedSubview(remove)
         return row
     }
 
@@ -1526,7 +1567,7 @@ final class PortfolioMainViewController: NSViewController {
             settingsToggleRow("显示持仓汇总", "在悬浮窗底部显示持仓盈亏摘要", isOn: showPositionSummary, identifier: "showPositionSummary")
             ]),
             settingsSection("同步与应用", rows: [
-            settingsToggleRow("iCloud Drive 同步", "同步自选列表、排序和菜单栏显示状态", isOn: iCloudDriveSyncEnabled, identifier: "iCloudDriveSync"),
+            settingsToggleRow("iCloud Drive 同步", "同步自选、账户和交易记录；统计曲线在每台设备重新计算", isOn: iCloudDriveSyncEnabled, identifier: "iCloudDriveSync"),
             settingsPopupRow("语言", "应用界面显示语言", values: AppLanguage.allCases.map(\.title), selected: language.title, identifier: "language"),
             settingsToggleRow("登录时启动", "登录 macOS 后自动打开 CareAssets", isOn: launchAtLoginEnabled, identifier: "launchAtLogin")
             ])
@@ -1699,8 +1740,9 @@ final class PortfolioMainViewController: NSViewController {
             stack.addArrangedSubview(empty)
         } else {
             for position in visible {
+                let accountName = position.accountID.flatMap { id in accounts.first(where: { $0.id == id })?.name } ?? "未指定账户"
                 stack.addArrangedSubview(positionRow(
-                    name: "\(position.name)  \(position.symbol)",
+                    name: "\(position.name)  \(position.symbol) · \(accountName)",
                     quantity: formatNumber(position.quantity, minFraction: 0, maxFraction: 6),
                     price: position.currentPrice.map { formatCurrencyWithCode($0, currencyCode: position.currency, compact: true) } ?? "--",
                     value: position.marketValue.map { formatCurrencyWithCode($0, currencyCode: position.currency, compact: true) } ?? "--",
@@ -1779,12 +1821,23 @@ final class PortfolioMainViewController: NSViewController {
         left.orientation = .vertical
         left.alignment = .leading
         left.spacing = 3
-        let title = NSTextField(labelWithString: "\(transaction.kind.title) · \(transaction.assetName.isEmpty ? transaction.currency : transaction.assetName)")
+        let sourceAccount = accountName(for: transaction.accountID)
+        let targetAccount = accountName(for: transaction.targetAccountID)
+        let subject: String
+        switch transaction.kind {
+        case .transfer:
+            subject = "\(sourceAccount) → \(targetAccount)"
+        case .exchange:
+            subject = sourceAccount
+        default:
+            subject = transaction.assetName.isEmpty ? sourceAccount : transaction.assetName
+        }
+        let title = NSTextField(labelWithString: "\(transaction.kind.title) · \(subject)")
         title.font = appFont(ofSize: 13, weight: .semibold)
         title.textColor = PortfolioTheme.primaryText
         title.alignment = .left
         title.lineBreakMode = .byTruncatingTail
-        let detail = NSTextField(labelWithString: DateFormatter.portfolioRow.string(from: transaction.occurredAt))
+        let detail = NSTextField(labelWithString: "\(DateFormatter.portfolioRow.string(from: transaction.occurredAt)) · \(sourceAccount)")
         detail.font = appFont(ofSize: 11, weight: .regular)
         detail.textColor = PortfolioTheme.tertiaryText
         detail.alignment = .left
@@ -1816,6 +1869,10 @@ final class PortfolioMainViewController: NSViewController {
         let amount: String
         if transaction.kind.isTrade {
             amount = "\(formatNumber(transaction.quantity, minFraction: 0, maxFraction: 6)) × \(formatCurrencyWithCode(transaction.unitPrice, currencyCode: transaction.currency, compact: true))"
+        } else if transaction.kind == .exchange {
+            amount = "\(formatCurrencyWithCode(transaction.amount, currencyCode: transaction.currency, compact: true)) → \(formatCurrencyWithCode(transaction.targetAmount, currencyCode: transaction.targetCurrency, compact: true))"
+        } else if transaction.kind == .transfer {
+            amount = "\(formatCurrencyWithCode(transaction.amount, currencyCode: transaction.currency, compact: true)) → \(targetAccount)"
         } else {
             amount = formatCurrencyWithCode(transaction.amount, currencyCode: transaction.currency, compact: true)
         }
@@ -1865,7 +1922,16 @@ final class PortfolioMainViewController: NSViewController {
             return .systemOrange
         case .dividend:
             return .systemPurple
+        case .transfer:
+            return .systemTeal
+        case .exchange:
+            return .systemYellow
         }
+    }
+
+    private func accountName(for id: UUID?) -> String {
+        guard let id else { return "未指定账户" }
+        return accounts.first(where: { $0.id == id })?.name ?? "已删除账户"
     }
 
     private func metricCard(_ title: String, _ value: String, _ subtitle: String, _ color: NSColor) -> NSView {
@@ -1942,6 +2008,62 @@ final class PortfolioMainViewController: NSViewController {
         onAddTransaction?(transaction)
     }
 
+    @objc private func manageAccountsClicked(_ sender: NSButton) {
+        let alert = NSAlert()
+        alert.messageText = "账户管理"
+        alert.informativeText = "账户用于区分不同银行和券商。已有交易的账户不能删除，请先在交易记录中修改归属。"
+        let accountPopup = NSPopUpButton()
+        accountPopup.addItems(withTitles: accounts.map(\.name))
+        accountPopup.selectItem(at: 0)
+        alert.accessoryView = accountPopup
+        alert.addButton(withTitle: "新增账户")
+        alert.addButton(withTitle: "重命名")
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "完成")
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            guard let name = promptForAccountName(title: "新增账户", value: "") else { return }
+            onCreateAccount?(name)
+        case .alertSecondButtonReturn:
+            guard accounts.indices.contains(accountPopup.indexOfSelectedItem),
+                  let name = promptForAccountName(title: "重命名账户", value: accounts[accountPopup.indexOfSelectedItem].name) else { return }
+            onRenameAccount?(accounts[accountPopup.indexOfSelectedItem].id, name)
+        case .alertThirdButtonReturn:
+            guard accounts.indices.contains(accountPopup.indexOfSelectedItem) else { return }
+            let account = accounts[accountPopup.indexOfSelectedItem]
+            let confirmation = NSAlert()
+            confirmation.messageText = "删除“\(account.name)”？"
+            confirmation.informativeText = "只有没有任何交易记录的账户可以删除。"
+            confirmation.alertStyle = .warning
+            confirmation.addButton(withTitle: "删除")
+            confirmation.addButton(withTitle: "取消")
+            guard confirmation.runModal() == .alertFirstButtonReturn else { return }
+            onDeleteAccount?(account.id)
+        default:
+            return
+        }
+    }
+
+    private func promptForAccountName(title: String, value: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        let field = NSTextField(string: value)
+        field.placeholderString = "例如 HSBC HK"
+        styleEditorTextField(field)
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            showEditorError("账户名称不能为空")
+            return nil
+        }
+        return name
+    }
+
     @objc private func transactionEditorAssetChanged(_ sender: NSPopUpButton) {
         guard transactionEditorAssets.indices.contains(sender.indexOfSelectedItem) else { return }
         transactionEditorCurrencyField?.stringValue = defaultTransactionCurrency(
@@ -1949,12 +2071,36 @@ final class PortfolioMainViewController: NSViewController {
         )
     }
 
+    @objc private func transactionEditorTypeChanged(_ sender: NSPopUpButton) {
+        guard let title = sender.selectedItem?.title,
+              let kind = PortfolioTransactionKind.allCases.first(where: { $0.title == title }) else { return }
+        configureTransactionEditorRows(for: kind)
+    }
+
+    private func configureTransactionEditorRows(for kind: PortfolioTransactionKind) {
+        let isTrade = kind.isTrade
+        let isExchange = kind == .exchange
+        let isTransfer = kind == .transfer
+        transactionEditorRows["asset"]?.isHidden = !isTrade
+        transactionEditorRows["quantity"]?.isHidden = !isTrade
+        transactionEditorRows["price"]?.isHidden = !isTrade
+        transactionEditorRows["amount"]?.isHidden = isTrade
+        transactionEditorRows["targetAccount"]?.isHidden = !(isExchange || isTransfer)
+        transactionEditorRows["targetCurrency"]?.isHidden = !isExchange
+        transactionEditorRows["targetAmount"]?.isHidden = !isExchange
+        transactionEditorRows["fee"]?.isHidden = kind == .deposit || kind == .withdrawal || kind == .dividend
+        transactionEditorRows["tax"]?.isHidden = kind == .deposit || kind == .withdrawal || kind == .dividend
+        transactionEditorSections["trade"]?.isHidden = !isTrade
+        transactionEditorSections["fees"]?.isHidden = kind == .deposit || kind == .withdrawal || kind == .dividend
+    }
+
     @objc private func addWatchlistClicked(_ sender: NSButton) {
-        isAddingWatchlistAsset = true
+        watchlistSearchPanel?.close()
+        isAddingWatchlistAsset = false
         isSearchingWatchlist = false
         watchlistSearchResults = []
         watchlistSearchMessage = nil
-        renderContent()
+        showWatchlistSearchPanel()
     }
 
     @objc private func finishAddingWatchlistClicked(_ sender: NSButton) {
@@ -1962,7 +2108,10 @@ final class PortfolioMainViewController: NSViewController {
         isSearchingWatchlist = false
         watchlistSearchResults = []
         watchlistSearchMessage = nil
-        renderContent()
+        watchlistSearchPanel?.close()
+        watchlistSearchPanel = nil
+        watchlistSearchField = nil
+        watchlistSearchResultsStack = nil
     }
 
     @objc private func watchlistSearchSubmitted(_ sender: Any) {
@@ -1970,14 +2119,14 @@ final class PortfolioMainViewController: NSViewController {
         guard !query.isEmpty else {
             watchlistSearchResults = []
             watchlistSearchMessage = "请输入关键词后再搜索。"
-            renderContent()
+            renderWatchlistSearchPanelResults()
             return
         }
         guard !isSearchingWatchlist else { return }
         isSearchingWatchlist = true
         watchlistSearchResults = []
         watchlistSearchMessage = nil
-        renderContent()
+        renderWatchlistSearchPanelResults()
         onSearchWatchlistAssets?(query)
     }
 
@@ -1985,6 +2134,131 @@ final class PortfolioMainViewController: NSViewController {
         guard let id = sender.identifier?.rawValue,
               let result = watchlistSearchResults.first(where: { $0.id == id }) else { return }
         onAddWatchlistAsset?(result)
+        finishAddingWatchlistClicked(sender)
+    }
+
+    private func showWatchlistSearchPanel() {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 540),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "添加自选"
+        panel.isReleasedWhenClosed = false
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.backgroundColor = PortfolioTheme.pageBackground
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+
+        let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = PortfolioTheme.pageBackground.cgColor
+        panel.contentView = root
+
+        let title = NSTextField(labelWithString: "添加自选")
+        title.font = appFont(ofSize: 18, weight: .bold)
+        title.textColor = PortfolioTheme.primaryText
+        title.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(title)
+
+        let detail = NSTextField(labelWithString: "搜索代码或公司名称，点击结果即可加入自选。")
+        detail.font = appFont(ofSize: 12, weight: .regular)
+        detail.textColor = PortfolioTheme.tertiaryText
+        detail.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(detail)
+
+        let searchField = NSSearchField()
+        searchField.placeholderString = "例如 AAPL、腾讯、0700"
+        searchField.font = appFont(ofSize: 13, weight: .regular)
+        searchField.target = self
+        searchField.action = #selector(watchlistSearchSubmitted(_:))
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(searchField)
+
+        let searchButton = NSButton(title: "搜索", target: self, action: #selector(watchlistSearchSubmitted(_:)))
+        searchButton.isBordered = false
+        searchButton.focusRingType = .none
+        searchButton.font = appFont(ofSize: 12, weight: .semibold)
+        searchButton.contentTintColor = PortfolioTheme.primaryText
+        searchButton.wantsLayer = true
+        searchButton.layer?.cornerRadius = 6
+        searchButton.layer?.backgroundColor = PortfolioTheme.primaryActionFill.cgColor
+        searchButton.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(searchButton)
+
+        let scroll = makeScrollView()
+        root.addSubview(scroll)
+        let list = verticalStack()
+        list.spacing = 7
+        let document = FlippedDocumentView()
+        document.addSubview(list)
+        scroll.documentView = document
+        document.translatesAutoresizingMaskIntoConstraints = false
+
+        let cancel = NSButton(title: "取消", target: self, action: #selector(finishAddingWatchlistClicked(_:)))
+        cancel.isBordered = false
+        cancel.focusRingType = .none
+        cancel.font = appFont(ofSize: 12, weight: .medium)
+        cancel.contentTintColor = PortfolioTheme.secondaryText
+        cancel.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(cancel)
+
+        NSLayoutConstraint.activate([
+            title.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 22),
+            title.topAnchor.constraint(equalTo: root.topAnchor, constant: 20),
+            detail.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            detail.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 5),
+            searchField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 22),
+            searchField.trailingAnchor.constraint(equalTo: searchButton.leadingAnchor, constant: -8),
+            searchField.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 16),
+            searchField.heightAnchor.constraint(equalToConstant: 30),
+            searchButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -22),
+            searchButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
+            searchButton.widthAnchor.constraint(equalToConstant: 58),
+            searchButton.heightAnchor.constraint(equalToConstant: 30),
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 22),
+            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -22),
+            scroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 16),
+            scroll.bottomAnchor.constraint(equalTo: cancel.topAnchor, constant: -12),
+            cancel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -22),
+            cancel.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
+            cancel.heightAnchor.constraint(equalToConstant: 28),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            list.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            list.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            list.topAnchor.constraint(equalTo: document.topAnchor),
+            list.bottomAnchor.constraint(equalTo: document.bottomAnchor)
+        ])
+
+        watchlistSearchPanel = panel
+        watchlistSearchField = searchField
+        watchlistSearchResultsStack = list
+        renderWatchlistSearchPanelResults()
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(searchField)
+    }
+
+    private func renderWatchlistSearchPanelResults() {
+        guard let list = watchlistSearchResultsStack else { return }
+        for view in list.arrangedSubviews {
+            list.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        if isSearchingWatchlist {
+            list.addArrangedSubview(watchlistSearchMessageRow("正在搜索…"))
+        } else if let watchlistSearchMessage {
+            list.addArrangedSubview(watchlistSearchMessageRow(watchlistSearchMessage))
+        } else if watchlistSearchResults.isEmpty {
+            list.addArrangedSubview(watchlistSearchMessageRow("输入关键词后搜索，再点击结果添加到自选。"))
+        } else {
+            for result in watchlistSearchResults {
+                let row = makeWatchlistSearchResultRow(result)
+                list.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
+            }
+        }
     }
 
     @objc private func editTransactionClicked(_ sender: NSButton) {
@@ -2040,7 +2314,16 @@ final class PortfolioMainViewController: NSViewController {
     }
 
     @objc private func chartCurrencyChanged(_ sender: NSPopUpButton) {
-        selectedCurrency = sender.titleOfSelectedItem ?? ""
+        selectedCurrency = sender.titleOfSelectedItem ?? "USD"
+        renderContent()
+    }
+
+    @objc private func chartMarketChanged(_ sender: NSPopUpButton) {
+        guard let title = sender.titleOfSelectedItem,
+              let market = PortfolioMarket.allCases.first(where: { $0.title == title }) else {
+            return
+        }
+        selectedMarket = market
         renderContent()
     }
 
@@ -2119,6 +2402,10 @@ final class PortfolioMainViewController: NSViewController {
     }
 
     private func showTransactionEditor(editing: PortfolioTransaction? = nil) -> PortfolioTransaction? {
+        guard !accounts.isEmpty else {
+            showEditorError("请先在“管理账户”中创建账户")
+            return nil
+        }
         let alert = NSAlert()
         alert.messageText = editing == nil ? "记录交易" : "编辑交易"
         alert.informativeText = editing == nil
@@ -2127,12 +2414,16 @@ final class PortfolioMainViewController: NSViewController {
         alert.addButton(withTitle: "保存")
         alert.addButton(withTitle: "取消")
 
-        var kinds: [PortfolioTransactionKind] = [.buy, .sell, .deposit, .withdrawal, .dividend]
+        var kinds: [PortfolioTransactionKind] = [.buy, .sell, .deposit, .withdrawal, .dividend, .transfer, .exchange]
         if editing?.kind == .opening {
             kinds.append(.opening)
         }
         let typePopup = NSPopUpButton()
         typePopup.addItems(withTitles: kinds.map(\.title))
+        let accountPopup = NSPopUpButton()
+        accountPopup.addItems(withTitles: accounts.map(\.name))
+        let targetAccountPopup = NSPopUpButton()
+        targetAccountPopup.addItems(withTitles: accounts.map(\.name))
 
         var editorAssets = trackedAssets
         if let editing,
@@ -2163,6 +2454,10 @@ final class PortfolioMainViewController: NSViewController {
             ?? editorAssets.first.map { defaultTransactionCurrency(for: $0) }
             ?? "CNY"
         let currencyField = NSTextField(string: initialCurrency)
+        let targetCurrencyField = NSTextField(string: editing?.targetCurrency ?? "USD")
+        targetCurrencyField.placeholderString = "例如 USD"
+        let targetAmountField = NSTextField(string: editing.map { $0.targetAmount > 0 ? formatNumber($0.targetAmount, minFraction: 0, maxFraction: 6) : "" } ?? "")
+        targetAmountField.placeholderString = "收到金额"
         let noteField = NSTextField(string: editing?.note ?? "")
         noteField.placeholderString = "可选"
 
@@ -2183,10 +2478,23 @@ final class PortfolioMainViewController: NSViewController {
             }
         }
 
-        for field in [dateField, quantityField, priceField, amountField, feeField, taxField, currencyField, noteField] {
+        if let accountID = editing?.accountID,
+           let index = accounts.firstIndex(where: { $0.id == accountID }) {
+            accountPopup.selectItem(at: index)
+        } else {
+            accountPopup.selectItem(at: 0)
+        }
+        if let targetAccountID = editing?.targetAccountID,
+           let index = accounts.firstIndex(where: { $0.id == targetAccountID }) {
+            targetAccountPopup.selectItem(at: index)
+        } else {
+            targetAccountPopup.selectItem(at: accountPopup.indexOfSelectedItem)
+        }
+
+        for field in [dateField, quantityField, priceField, amountField, feeField, taxField, currencyField, targetCurrencyField, targetAmountField, noteField] {
             styleEditorTextField(field)
         }
-        for popup in [typePopup, assetPopup] {
+        for popup in [typePopup, accountPopup, targetAccountPopup, assetPopup] {
             popup.controlSize = .regular
             popup.font = appFont(ofSize: 13, weight: .regular)
             popup.appearance = NSAppearance(named: .darkAqua)
@@ -2195,26 +2503,58 @@ final class PortfolioMainViewController: NSViewController {
         transactionEditorCurrencyField = currencyField
         assetPopup.target = self
         assetPopup.action = #selector(transactionEditorAssetChanged(_:))
+        typePopup.target = self
+        typePopup.action = #selector(transactionEditorTypeChanged(_:))
         defer {
             transactionEditorAssets = []
             transactionEditorCurrencyField = nil
+            transactionEditorRows = [:]
+            transactionEditorSections = [:]
         }
 
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 7
-        stack.frame = NSRect(x: 0, y: 0, width: 430, height: 350)
-        stack.addArrangedSubview(editorRow("类型", typePopup))
-        stack.addArrangedSubview(editorRow("资产", assetPopup))
-        stack.addArrangedSubview(editorRow("时间", dateField))
-        stack.addArrangedSubview(editorRow("数量", quantityField))
-        stack.addArrangedSubview(editorRow("成交单价", priceField))
-        stack.addArrangedSubview(editorRow("金额", amountField))
-        stack.addArrangedSubview(editorRow("手续费", feeField))
-        stack.addArrangedSubview(editorRow("税费", taxField))
-        stack.addArrangedSubview(editorRow("币种", currencyField))
-        stack.addArrangedSubview(editorRow("备注", noteField))
+        stack.alignment = .width
+        stack.spacing = 12
+        stack.frame = NSRect(x: 0, y: 0, width: 430, height: 500)
+        let typeRow = editorRow("类型", typePopup)
+        let accountRow = editorRow("账户", accountPopup)
+        let targetAccountRow = editorRow("收款账户", targetAccountPopup)
+        let assetRow = editorRow("资产", assetPopup)
+        let dateRow = editorRow("时间", dateField)
+        let quantityRow = editorRow("数量", quantityField)
+        let priceRow = editorRow("成交单价", priceField)
+        let amountRow = editorRow("金额", amountField)
+        let targetCurrencyRow = editorRow("收到币种", targetCurrencyField)
+        let targetAmountRow = editorRow("收到金额", targetAmountField)
+        let feeRow = editorRow("手续费", feeField)
+        let taxRow = editorRow("税费", taxField)
+        let currencyRow = editorRow("结算币种", currencyField)
+        let noteRow = editorRow("备注", noteField)
+        transactionEditorRows = [
+            "asset": assetRow,
+            "quantity": quantityRow,
+            "price": priceRow,
+            "amount": amountRow,
+            "targetAccount": targetAccountRow,
+            "targetCurrency": targetCurrencyRow,
+            "targetAmount": targetAmountRow,
+            "fee": feeRow,
+            "tax": taxRow
+        ]
+        let basicSection = editorSection("基本信息", rows: [typeRow, accountRow, targetAccountRow, dateRow])
+        let tradeSection = editorSection("交易标的", rows: [assetRow, quantityRow, priceRow])
+        let settlementSection = editorSection("结算信息", rows: [currencyRow, amountRow, targetCurrencyRow, targetAmountRow])
+        let feesSection = editorSection("费用", rows: [feeRow, taxRow])
+        let noteSection = editorSection("备注", rows: [noteRow])
+        transactionEditorSections = [
+            "trade": tradeSection,
+            "fees": feesSection
+        ]
+        for section in [basicSection, tradeSection, settlementSection, feesSection, noteSection] {
+            stack.addArrangedSubview(section)
+        }
+        configureTransactionEditorRows(for: editing?.kind ?? .buy)
         alert.accessoryView = stack
         alert.window.appearance = NSAppearance(named: .darkAqua)
 
@@ -2233,6 +2573,11 @@ final class PortfolioMainViewController: NSViewController {
             showEditorError("请填写币种")
             return nil
         }
+        guard accounts.indices.contains(accountPopup.indexOfSelectedItem) else {
+            showEditorError("请选择账户")
+            return nil
+        }
+        let accountID = accounts[accountPopup.indexOfSelectedItem].id
 
         if kind.isTrade {
             guard !editorAssets.isEmpty,
@@ -2254,7 +2599,8 @@ final class PortfolioMainViewController: NSViewController {
                 unitPrice: unitPrice,
                 fee: fee,
                 tax: tax,
-                note: noteField.stringValue
+                note: noteField.stringValue,
+                accountID: accountID
             )
             transaction.id = editing?.id ?? UUID()
             transaction.currency = currency
@@ -2262,9 +2608,41 @@ final class PortfolioMainViewController: NSViewController {
         }
 
         guard let amount = decimal(amountField.stringValue), amount > 0 else {
-            showEditorError("资金流水需要填写大于 0 的金额")
+            showEditorError("请填写大于 0 的金额")
             return nil
         }
+        let targetAccountID: UUID?
+        if kind == .transfer || kind == .exchange {
+            guard accounts.indices.contains(targetAccountPopup.indexOfSelectedItem) else {
+                showEditorError("请选择收款账户")
+                return nil
+            }
+            targetAccountID = accounts[targetAccountPopup.indexOfSelectedItem].id
+        } else {
+            targetAccountID = nil
+        }
+
+        var targetCurrency = ""
+        var targetAmount = 0.0
+        if kind == .transfer {
+            guard targetAccountID != accountID else {
+                showEditorError("转出和收款账户不能相同")
+                return nil
+            }
+            targetCurrency = currency
+            targetAmount = amount
+        } else if kind == .exchange {
+            targetCurrency = targetCurrencyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard !targetCurrency.isEmpty,
+                  targetCurrency != currency,
+                  let receivedAmount = decimal(targetAmountField.stringValue),
+                  receivedAmount > 0 else {
+                showEditorError("换汇需要填写不同的收到币种和大于 0 的收到金额")
+                return nil
+            }
+            targetAmount = receivedAmount
+        }
+
         return PortfolioTransaction(
             id: editing?.id ?? UUID(),
             occurredAt: occurredAt,
@@ -2279,7 +2657,11 @@ final class PortfolioMainViewController: NSViewController {
             amount: amount,
             fee: fee,
             tax: tax,
-            note: noteField.stringValue
+            note: noteField.stringValue,
+            accountID: accountID,
+            targetAccountID: targetAccountID,
+            targetCurrency: targetCurrency,
+            targetAmount: targetAmount
         )
     }
 
@@ -2302,6 +2684,25 @@ final class PortfolioMainViewController: NSViewController {
         field.backgroundColor = NSColor.white.withAlphaComponent(0.10)
         field.focusRingType = .default
         field.alignment = .left
+    }
+
+    private func editorSection(_ title: String, rows: [NSView]) -> NSStackView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .width
+        section.spacing = 6
+
+        let header = NSTextField(labelWithString: title)
+        header.font = appFont(ofSize: 11, weight: .semibold)
+        header.textColor = PortfolioTheme.tertiaryText
+        header.alignment = .left
+        header.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        section.addArrangedSubview(header)
+
+        for row in rows {
+            section.addArrangedSubview(row)
+        }
+        return section
     }
 
     private func editorRow(_ title: String, _ field: NSView) -> NSView {
