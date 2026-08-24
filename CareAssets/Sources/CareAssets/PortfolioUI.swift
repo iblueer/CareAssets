@@ -1857,18 +1857,36 @@ final class PortfolioMainViewController: NSViewController {
         left.setContentHuggingPriority(.defaultLow, for: .horizontal)
         row.addArrangedSubview(left)
 
+        let symbolColumn = NSView()
+        symbolColumn.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        symbolColumn.heightAnchor.constraint(equalToConstant: 22).isActive = true
         if !transaction.symbol.isEmpty {
-            let symbol = NSTextField(labelWithString: transaction.symbol)
-            symbol.font = appFont(ofSize: 11, weight: .semibold)
-            symbol.textColor = PortfolioTheme.secondaryText
-            symbol.alignment = .center
-            symbol.wantsLayer = true
-            symbol.layer?.cornerRadius = 5
-            symbol.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
-            symbol.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
-            symbol.heightAnchor.constraint(equalToConstant: 22).isActive = true
-            row.addArrangedSubview(symbol)
+            let symbolTag = NSView()
+            symbolTag.wantsLayer = true
+            symbolTag.layer?.cornerRadius = 5
+            symbolTag.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
+
+            let symbolLabel = NSTextField(labelWithString: transaction.symbol)
+            symbolLabel.font = appFont(ofSize: 11, weight: .semibold)
+            symbolLabel.textColor = PortfolioTheme.secondaryText
+            symbolLabel.alignment = .center
+            symbolLabel.lineBreakMode = .byTruncatingTail
+            symbolLabel.translatesAutoresizingMaskIntoConstraints = false
+            symbolTag.translatesAutoresizingMaskIntoConstraints = false
+            symbolColumn.addSubview(symbolTag)
+            symbolTag.addSubview(symbolLabel)
+
+            NSLayoutConstraint.activate([
+                symbolTag.centerXAnchor.constraint(equalTo: symbolColumn.centerXAnchor),
+                symbolTag.centerYAnchor.constraint(equalTo: symbolColumn.centerYAnchor),
+                symbolTag.widthAnchor.constraint(greaterThanOrEqualToConstant: 52),
+                symbolTag.heightAnchor.constraint(equalToConstant: 22),
+                symbolLabel.leadingAnchor.constraint(equalTo: symbolTag.leadingAnchor, constant: 8),
+                symbolLabel.trailingAnchor.constraint(equalTo: symbolTag.trailingAnchor, constant: -8),
+                symbolLabel.centerYAnchor.constraint(equalTo: symbolTag.centerYAnchor)
+            ])
         }
+        row.addArrangedSubview(symbolColumn)
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
