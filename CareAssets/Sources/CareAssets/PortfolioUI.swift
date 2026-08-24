@@ -2566,7 +2566,7 @@ final class PortfolioMainViewController: NSViewController {
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 12
-        stack.frame = NSRect(x: 0, y: 0, width: 430, height: 640)
+        stack.frame = NSRect(x: 0, y: 0, width: 430, height: 760)
         let typeRow = editorRow("类型", typePopup)
         let accountRow = editorRow("账户", accountPopup)
         let targetAccountRow = editorRow("收款账户", targetAccountPopup)
@@ -2615,7 +2615,14 @@ final class PortfolioMainViewController: NSViewController {
             stack.addArrangedSubview(section)
         }
         configureTransactionEditorRows(for: editing?.kind ?? .buy)
-        alert.accessoryView = stack
+
+        let editorScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 430, height: 420))
+        editorScroll.hasVerticalScroller = true
+        editorScroll.autohidesScrollers = false
+        editorScroll.drawsBackground = false
+        editorScroll.borderType = .noBorder
+        editorScroll.documentView = stack
+        alert.accessoryView = editorScroll
         alert.window.appearance = NSAppearance(named: .darkAqua)
 
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
@@ -2775,7 +2782,6 @@ final class PortfolioMainViewController: NSViewController {
         header.textColor = PortfolioTheme.tertiaryText
         header.alignment = .left
         header.heightAnchor.constraint(equalToConstant: 16).isActive = true
-        header.widthAnchor.constraint(equalTo: section.widthAnchor).isActive = true
         section.addArrangedSubview(header)
 
         for row in rows {
