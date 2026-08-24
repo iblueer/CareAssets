@@ -1852,6 +1852,7 @@ final class PortfolioMainViewController: NSViewController {
         detail.alignment = .left
         left.addArrangedSubview(title)
         left.addArrangedSubview(detail)
+        left.widthAnchor.constraint(equalToConstant: 250).isActive = true
         title.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
         detail.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
         left.setContentHuggingPriority(.defaultLow, for: .horizontal)
