@@ -5401,8 +5401,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func showMainWindow() {
         NSLog("CareAssets opening portfolio main window")
         previewWindow?.orderOut(nil)
+        // 主窗口重新打开时恢复 Dock 图标和常规应用行为。
+        NSApp.setActivationPolicy(.regular)
         if mainWindowController == nil {
             let controller = PortfolioMainWindowController()
+            controller.onWindowClose = { [weak self] in
+                self?.hideDockIconAfterMainWindowClose()
+            }
             controller.portfolioViewController.onAddTransaction = { [weak self] transaction in
                 self?.addPortfolioTransaction(transaction)
             }
@@ -5471,6 +5476,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         updateMainWindow()
         mainWindowController?.present()
         NSLog("CareAssets portfolio main window requested")
+    }
+
+    private func hideDockIconAfterMainWindowClose() {
+        // 关闭主窗口不退出菜单栏应用；accessory policy 会隐藏 Dock 图标并保留 status item。
+        NSApp.setActivationPolicy(.accessory)
     }
 
     private func addPortfolioTransaction(_ transaction: PortfolioTransaction) {

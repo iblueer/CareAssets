@@ -272,8 +272,9 @@ private func chartNumber(_ value: Double, currency: String) -> String {
     return formatNumber(value, minFraction: 0, maxFraction: 2)
 }
 
-final class PortfolioMainWindowController: NSWindowController {
+final class PortfolioMainWindowController: NSWindowController, NSWindowDelegate {
     let portfolioViewController = PortfolioMainViewController()
+    var onWindowClose: (() -> Void)?
 
     init() {
         let window = NSWindow(
@@ -288,6 +289,7 @@ final class PortfolioMainWindowController: NSWindowController {
         window.appearance = NSAppearance(named: .darkAqua)
         window.contentViewController = portfolioViewController
         super.init(window: window)
+        window.delegate = self
     }
 
     required init?(coder: NSCoder) {
@@ -303,6 +305,10 @@ final class PortfolioMainWindowController: NSWindowController {
         }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onWindowClose?()
     }
 }
 
