@@ -41,7 +41,7 @@ final class PortfolioChartView: NSView {
     var currency = "" {
         didSet { refreshChart() }
     }
-    var metric: PortfolioChartMetric = .marketValue {
+    var metric: PortfolioChartMetric = .netWorth {
         didSet { refreshChart() }
     }
     var lineColor = NSColor(calibratedRed: 0.30, green: 0.72, blue: 1.0, alpha: 1) {
@@ -73,15 +73,30 @@ final class PortfolioChartView: NSView {
         layer?.borderWidth = 1
         tooltip.font = appFont(ofSize: 11, weight: .semibold)
         tooltip.textColor = .white
-        tooltip.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.96)
+        tooltip.backgroundColor = NSColor(calibratedWhite: 0.10, alpha: 0.94)
         tooltip.drawsBackground = true
         tooltip.isBezeled = false
         tooltip.lineBreakMode = .byTruncatingTail
-        tooltip.maximumNumberOfLines = 2
+        tooltip.maximumNumberOfLines = 4
         tooltip.wantsLayer = true
-        tooltip.layer?.cornerRadius = 6
+        tooltip.layer?.cornerRadius = 8
+        tooltip.layer?.borderWidth = 1
+        tooltip.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
         tooltip.isHidden = true
         addSubview(tooltip)
+    }
+
+    private func valueRange() -> (minimum: Double, maximum: Double, range: Double)? {
+        var allValues = points.map(\.value)
+        if !secondaryPoints.isEmpty {
+            allValues.append(contentsOf: secondaryPoints.map(\.value))
+        }
+        guard let minimumValue = allValues.min(), let maximumValue = allValues.max() else { return nil }
+        let padding = max(abs(maximumValue - minimumValue) * 0.12, abs(maximumValue) * 0.02, 0.01)
+        let minimum = minimumValue - padding
+        let maximum = maximumValue + padding
+        let range = max(0.0000001, maximum - minimum)
+        return (minimum, maximum, range)
     }
 
     required init?(coder: NSCoder) {
@@ -118,21 +133,13 @@ final class PortfolioChartView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard points.count > 1 || secondaryPoints.count > 1 else {
+        guard points.count > 1 || secondaryPoints.count > 1,
+              let (minimum, maximum, range) = valueRange() else {
             drawEmptyState()
             return
         }
 
         let plot = plotRect
-        var allValues = points.map(\.value)
-        if !secondaryPoints.isEmpty {
-            allValues.append(contentsOf: secondaryPoints.map(\.value))
-        }
-        guard let minimumValue = allValues.min(), let maximumValue = allValues.max() else { return }
-        let padding = max(abs(maximumValue - minimumValue) * 0.12, abs(maximumValue) * 0.02, 0.01)
-        let minimum = minimumValue - padding
-        let maximum = maximumValue + padding
-        let range = max(0.0000001, maximum - minimum)
 
         for index in 0...3 {
             let progress = CGFloat(index) / 3
@@ -276,12 +283,41 @@ final class PortfolioChartView: NSView {
             tooltip.frame.size.height = 38
         }
         let plot = plotRect
-        let x = plot.minX + CGFloat(hoverIndex) / CGFloat(max(1, points.count - 1)) * plot.width
-        let y = plot.maxY - tooltip.frame.height - 8
-        tooltip.frame.origin = NSPoint(
-            x: min(max(8, x - tooltip.frame.width / 2), bounds.width - tooltip.frame.width - 8),
-            y: max(8, y)
-        )
+        let cursorX = plot.minX + CGFloat(hoverIndex) / CGFloat(max(1, points.count - 1)) * plot.width
+        let cardWidth = tooltip.frame.width
+        let cardHeight = tooltip.frame.height
+
+        // 1. 水平避让：避免卡片中心压在光标竖线与当前数据圆点上
+        let targetX: CGFloat
+        if cursorX + 16 + cardWidth <= bounds.width - 8 {
+            targetX = cursorX + 16
+        } else if cursorX - 16 - cardWidth >= 8 {
+            targetX = cursorX - 16 - cardWidth
+        } else {
+            targetX = min(max(8, cursorX - cardWidth / 2), bounds.width - cardWidth - 8)
+        }
+
+        // 2. 垂直避让：根据折线与辅助线的实际高度，动态躲避至空旷区域（下半区或上半区）
+        var targetY: CGFloat = plot.maxY - cardHeight - 8
+        if let (minimum, _, range) = valueRange() {
+            let primaryY = plot.minY + CGFloat((point.value - minimum) / range) * plot.height
+            let secondaryY: CGFloat = (!secondaryPoints.isEmpty && hoverIndex < secondaryPoints.count)
+                ? plot.minY + CGFloat((secondaryPoints[hoverIndex].value - minimum) / range) * plot.height
+                : primaryY
+            let highestLineY = max(primaryY, secondaryY)
+            let lowestLineY = min(primaryY, secondaryY)
+
+            // 如果线条整体在图表上半区（或靠近顶部），卡片避让到下方空旷区；反之避让到上方
+            if highestLineY > plot.midY - 10 {
+                targetY = max(plot.minY + 6, min(lowestLineY - cardHeight - 12, plot.midY - cardHeight / 2))
+                targetY = max(plot.minY + 6, min(targetY, plot.maxY - cardHeight - 6))
+            } else {
+                targetY = min(plot.maxY - cardHeight - 6, max(highestLineY + 12, plot.midY - cardHeight / 2))
+                targetY = max(plot.minY + 6, min(targetY, plot.maxY - cardHeight - 6))
+            }
+        }
+
+        tooltip.frame.origin = NSPoint(x: targetX, y: targetY)
         tooltip.isHidden = false
     }
 
@@ -457,7 +493,7 @@ final class PortfolioMainViewController: NSViewController {
     private var iCloudDriveSyncEnabled = false
     private var language: AppLanguage = .system
     private var launchAtLoginEnabled = false
-    private var selectedMetric: PortfolioChartMetric = .marketValue
+    private var selectedMetric: PortfolioChartMetric = .netWorth
     private var selectedMarket: PortfolioMarket = .all
     private var selectedCurrency = "USD"
     private var overviewSummaries: [PortfolioMarket: [String: PortfolioCurrencySummary]] = [:]
