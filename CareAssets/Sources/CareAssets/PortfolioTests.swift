@@ -88,6 +88,7 @@ enum PortfolioTestRunner {
         assertApproximately(currency.totalPnl, 947)
         assertApproximately(currency.cashBalance, 1547)
         assertApproximately(currency.netWorth, 3947)
+        assertApproximately(currency.netDeposited, 3000)
         assertApproximately(position.quantity, 15)
         assertApproximately(position.averageCost, 110.1)
         precondition(abs(currency.totalPnl - (currency.realizedPnl + currency.unrealizedPnl + currency.dividends)) < 0.000001)

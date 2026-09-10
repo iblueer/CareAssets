@@ -47,6 +47,13 @@ final class PortfolioChartView: NSView {
     var lineColor = NSColor(calibratedRed: 0.30, green: 0.72, blue: 1.0, alpha: 1) {
         didSet { needsDisplay = true }
     }
+    var secondaryPoints: [PortfolioChartPoint] = [] {
+        didSet { refreshChart() }
+    }
+    var secondaryTitle: String = "净投入本金"
+    var secondaryLineColor = NSColor(calibratedRed: 0.96, green: 0.65, blue: 0.14, alpha: 0.90) {
+        didSet { needsDisplay = true }
+    }
 
     private var trackingArea: NSTrackingArea?
     private var hoverIndex: Int? {
@@ -111,14 +118,17 @@ final class PortfolioChartView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard points.count > 1 else {
+        guard points.count > 1 || secondaryPoints.count > 1 else {
             drawEmptyState()
             return
         }
 
         let plot = plotRect
-        let values = points.map(\.value)
-        guard let minimumValue = values.min(), let maximumValue = values.max() else { return }
+        var allValues = points.map(\.value)
+        if !secondaryPoints.isEmpty {
+            allValues.append(contentsOf: secondaryPoints.map(\.value))
+        }
+        guard let minimumValue = allValues.min(), let maximumValue = allValues.max() else { return }
         let padding = max(abs(maximumValue - minimumValue) * 0.12, abs(maximumValue) * 0.02, 0.01)
         let minimum = minimumValue - padding
         let maximum = maximumValue + padding
@@ -144,7 +154,7 @@ final class PortfolioChartView: NSView {
         }
 
         let pointLocation: (Int) -> NSPoint = { index in
-            let x = plot.minX + CGFloat(index) / CGFloat(self.points.count - 1) * plot.width
+            let x = plot.minX + CGFloat(index) / CGFloat(max(1, self.points.count - 1)) * plot.width
             let y = plot.minY + CGFloat((self.points[index].value - minimum) / range) * plot.height
             return NSPoint(x: x, y: y)
         }
@@ -160,29 +170,54 @@ final class PortfolioChartView: NSView {
             zero.stroke()
         }
 
-        let line = NSBezierPath()
-        line.lineWidth = 2
-        line.lineJoinStyle = .round
-        line.lineCapStyle = .round
-        for index in points.indices {
-            let point = pointLocation(index)
-            if index == points.startIndex {
-                line.move(to: point)
-            } else {
-                line.line(to: point)
+        if secondaryPoints.count > 1 {
+            let secLocation: (Int) -> NSPoint = { index in
+                let x = plot.minX + CGFloat(index) / CGFloat(max(1, self.secondaryPoints.count - 1)) * plot.width
+                let y = plot.minY + CGFloat((self.secondaryPoints[index].value - minimum) / range) * plot.height
+                return NSPoint(x: x, y: y)
             }
+            let secLine = NSBezierPath()
+            secLine.lineWidth = 1.6
+            secLine.setLineDash([4, 3], count: 2, phase: 0)
+            secLine.lineJoinStyle = .round
+            secLine.lineCapStyle = .round
+            for index in secondaryPoints.indices {
+                let point = secLocation(index)
+                if index == secondaryPoints.startIndex {
+                    secLine.move(to: point)
+                } else {
+                    secLine.line(to: point)
+                }
+            }
+            secondaryLineColor.setStroke()
+            secLine.stroke()
         }
 
-        let fill = line.copy() as! NSBezierPath
-        fill.line(to: NSPoint(x: plot.maxX, y: plot.minY))
-        fill.line(to: NSPoint(x: plot.minX, y: plot.minY))
-        fill.close()
-        lineColor.withAlphaComponent(0.15).setFill()
-        fill.fill()
-        lineColor.setStroke()
-        line.stroke()
+        if points.count > 1 {
+            let line = NSBezierPath()
+            line.lineWidth = 2
+            line.lineJoinStyle = .round
+            line.lineCapStyle = .round
+            for index in points.indices {
+                let point = pointLocation(index)
+                if index == points.startIndex {
+                    line.move(to: point)
+                } else {
+                    line.line(to: point)
+                }
+            }
 
-        if let hoverIndex {
+            let fill = line.copy() as! NSBezierPath
+            fill.line(to: NSPoint(x: plot.maxX, y: plot.minY))
+            fill.line(to: NSPoint(x: plot.minX, y: plot.minY))
+            fill.close()
+            lineColor.withAlphaComponent(0.15).setFill()
+            fill.fill()
+            lineColor.setStroke()
+            line.stroke()
+        }
+
+        if let hoverIndex, points.indices.contains(hoverIndex) {
             let point = pointLocation(hoverIndex)
             let crosshair = NSBezierPath()
             crosshair.move(to: NSPoint(x: point.x, y: plot.minY))
@@ -191,6 +226,13 @@ final class PortfolioChartView: NSView {
             crosshair.setLineDash([3, 3], count: 2, phase: 0)
             NSColor.white.withAlphaComponent(0.45).setStroke()
             crosshair.stroke()
+
+            if !secondaryPoints.isEmpty, hoverIndex < secondaryPoints.count {
+                let secY = plot.minY + CGFloat((secondaryPoints[hoverIndex].value - minimum) / range) * plot.height
+                secondaryLineColor.setFill()
+                NSBezierPath(ovalIn: NSRect(x: point.x - 3.5, y: secY - 3.5, width: 7, height: 7)).fill()
+            }
+
             lineColor.setFill()
             NSBezierPath(ovalIn: NSRect(x: point.x - 4, y: point.y - 4, width: 8, height: 8)).fill()
         }
@@ -215,10 +257,24 @@ final class PortfolioChartView: NSView {
         let value = metric == .totalPnl
             ? formatSignedCurrencyWithCode(point.value, currencyCode: currency, compact: false)
             : formatCurrencyWithCode(point.value, currencyCode: currency, compact: false)
-        tooltip.stringValue = "\(date)\n\(metric.title)：\(value)"
-        tooltip.sizeToFit()
-        tooltip.frame.size.width = min(188, max(130, tooltip.frame.width + 18))
-        tooltip.frame.size.height = 38
+
+        if !secondaryPoints.isEmpty, hoverIndex < secondaryPoints.count {
+            let secPoint = secondaryPoints[hoverIndex]
+            let secValue = formatCurrencyWithCode(secPoint.value, currencyCode: currency, compact: false)
+            let diff = point.value - secPoint.value
+            let diffText = formatSignedCurrencyWithCode(diff, currencyCode: currency, compact: false)
+            tooltip.maximumNumberOfLines = 4
+            tooltip.stringValue = "\(date)\n\(metric.title)：\(value)\n\(secondaryTitle)：\(secValue)\n盈亏差额：\(diffText)"
+            tooltip.sizeToFit()
+            tooltip.frame.size.width = min(220, max(150, tooltip.frame.width + 18))
+            tooltip.frame.size.height = 68
+        } else {
+            tooltip.maximumNumberOfLines = 2
+            tooltip.stringValue = "\(date)\n\(metric.title)：\(value)"
+            tooltip.sizeToFit()
+            tooltip.frame.size.width = min(188, max(130, tooltip.frame.width + 18))
+            tooltip.frame.size.height = 38
+        }
         let plot = plotRect
         let x = plot.minX + CGFloat(hoverIndex) / CGFloat(max(1, points.count - 1)) * plot.width
         let y = plot.maxY - tooltip.frame.height - 8
@@ -757,7 +813,8 @@ final class PortfolioMainViewController: NSViewController {
         cards.spacing = 12
         cards.distribution = .fillEqually
         cards.addArrangedSubview(metricCard("持仓市值", selectedSummary.map { formatCurrencyWithCode($0.marketValue, currencyCode: currency, compact: true) } ?? "--", "当前行情估值", .systemBlue))
-        cards.addArrangedSubview(metricCard("累计投入", selectedSummary.map { formatCurrencyWithCode($0.grossInvested, currencyCode: currency, compact: true) } ?? "--", "买入金额与费用", .systemOrange))
+        cards.addArrangedSubview(metricCard("净投入本金", selectedSummary?.hasFundingRecords == true ? formatCurrencyWithCode(selectedSummary?.netDeposited ?? 0, currencyCode: currency, compact: true) : "--", "累计入金 - 累计出金", .systemIndigo))
+        cards.addArrangedSubview(metricCard("累计买入", selectedSummary.map { formatCurrencyWithCode($0.grossInvested, currencyCode: currency, compact: true) } ?? "--", "买入金额与费用", .systemOrange))
         cards.addArrangedSubview(metricCard("累计盈亏", selectedSummary.map { formatSignedCurrencyWithCode($0.totalPnl, currencyCode: currency, compact: true) } ?? "--", "已实现 + 未实现", selectedSummary.map { $0.totalPnl >= 0 ? .systemGreen : .systemRed } ?? .systemGray))
         cards.addArrangedSubview(metricCard("总资产", selectedSummary?.hasFundingRecords == true ? formatCurrencyWithCode(selectedSummary?.netWorth ?? 0, currencyCode: currency, compact: true) : "需记录入金", selectedSummary?.hasFundingRecords == true ? "现金 + 持仓市值" : "仅买卖记录无法还原", .systemPurple))
         cards.heightAnchor.constraint(equalToConstant: 94).isActive = true
@@ -772,6 +829,12 @@ final class PortfolioMainViewController: NSViewController {
         chartTitle.font = appFont(ofSize: 15, weight: .bold)
         chartTitle.textColor = .white
         chartHeader.addArrangedSubview(chartTitle)
+        if selectedMetric == .netWorth {
+            let legend = NSTextField(labelWithString: "（实线：总资产 / 虚线：净本金）")
+            legend.font = appFont(ofSize: 11, weight: .medium)
+            legend.textColor = NSColor.white.withAlphaComponent(0.50)
+            chartHeader.addArrangedSubview(legend)
+        }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         chartHeader.addArrangedSubview(spacer)
@@ -801,9 +864,33 @@ final class PortfolioMainViewController: NSViewController {
         let chart = PortfolioChartView()
         chart.metric = selectedMetric
         chart.currency = currency
-        chart.points = snapshots.filter { $0.market == selectedMarket && $0.currency == currency }.compactMap { snapshot in
+        let marketSnapshots = snapshots.filter { $0.market == selectedMarket && $0.currency == currency }
+        chart.points = marketSnapshots.compactMap { snapshot in
             guard let value = snapshot.value(for: selectedMetric) else { return nil }
             return PortfolioChartPoint(date: snapshot.capturedAt, value: value)
+        }
+        if selectedMetric == .netWorth {
+            chart.secondaryPoints = marketSnapshots.compactMap { snapshot in
+                guard let value = snapshot.netDeposited else { return nil }
+                return PortfolioChartPoint(date: snapshot.capturedAt, value: value)
+            }
+            chart.secondaryTitle = "净投入本金"
+            chart.lineColor = NSColor(calibratedRed: 0.65, green: 0.45, blue: 1.0, alpha: 1.0)
+            chart.secondaryLineColor = NSColor(calibratedRed: 0.96, green: 0.65, blue: 0.14, alpha: 0.90)
+        } else {
+            chart.secondaryPoints = []
+            switch selectedMetric {
+            case .netDeposited:
+                chart.lineColor = NSColor(calibratedRed: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
+            case .marketValue:
+                chart.lineColor = NSColor(calibratedRed: 0.30, green: 0.72, blue: 1.0, alpha: 1.0)
+            case .invested:
+                chart.lineColor = .systemOrange
+            case .totalPnl:
+                chart.lineColor = (selectedSummary?.totalPnl ?? 0) >= 0 ? .systemGreen : .systemRed
+            case .netWorth:
+                break
+            }
         }
         chart.heightAnchor.constraint(equalToConstant: 255).isActive = true
         stack.addArrangedSubview(chart)

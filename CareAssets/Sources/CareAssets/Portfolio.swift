@@ -307,6 +307,7 @@ struct PortfolioCurrencySummary {
     var marketValue: Double = 0
     var cashBalance: Double = 0
     var netWorth: Double = 0
+    var netDeposited: Double = 0
     var realizedPnl: Double = 0
     var unrealizedPnl: Double = 0
     var dividends: Double = 0
@@ -356,16 +357,18 @@ enum PortfolioMarket: String, CaseIterable, Codable, Sendable, Hashable {
 }
 
 enum PortfolioChartMetric: String, CaseIterable {
-    case invested
-    case marketValue
     case netWorth
+    case netDeposited
+    case marketValue
+    case invested
     case totalPnl
 
     var title: String {
         switch self {
-        case .invested: return "累计投入"
-        case .marketValue: return "持仓市值"
         case .netWorth: return "总资产"
+        case .netDeposited: return "净投入本金"
+        case .marketValue: return "持仓市值"
+        case .invested: return "累计买入"
         case .totalPnl: return "累计盈亏"
         }
     }
@@ -383,12 +386,14 @@ struct PortfolioSnapshot {
     var realizedPnl: Double
     var unrealizedPnl: Double
     var totalPnl: Double
+    var netDeposited: Double? = nil
 
     func value(for metric: PortfolioChartMetric) -> Double? {
         switch metric {
-        case .invested: return invested
-        case .marketValue: return marketValue
         case .netWorth: return netWorth
+        case .netDeposited: return netDeposited
+        case .marketValue: return marketValue
+        case .invested: return invested
         case .totalPnl: return totalPnl
         }
     }
@@ -421,6 +426,7 @@ struct PortfolioExchangeRates: Sendable {
             converted.marketValue += native.marketValue * factor
             converted.cashBalance += native.cashBalance * factor
             converted.netWorth += native.netWorth * factor
+            converted.netDeposited += native.netDeposited * factor
             converted.realizedPnl += native.realizedPnl * factor
             converted.unrealizedPnl += native.unrealizedPnl * factor
             converted.dividends += native.dividends * factor
@@ -515,7 +521,8 @@ enum PortfolioHistoryBuilder {
                         netWorth: converted.hasFundingRecords ? converted.netWorth : nil,
                         realizedPnl: converted.realizedPnl,
                         unrealizedPnl: converted.unrealizedPnl,
-                        totalPnl: converted.totalPnl
+                        totalPnl: converted.totalPnl,
+                        netDeposited: converted.hasFundingRecords ? converted.netDeposited : nil
                     ))
                 }
             }
@@ -1010,7 +1017,8 @@ final class PortfolioStore {
                     netWorth: currency.hasFundingRecords ? currency.netWorth : nil,
                     realizedPnl: currency.realizedPnl,
                     unrealizedPnl: currency.unrealizedPnl,
-                    totalPnl: currency.totalPnl
+                    totalPnl: currency.totalPnl,
+                    netDeposited: currency.hasFundingRecords ? currency.netDeposited : nil
                 )
                 try insert(snapshot)
             }
@@ -1023,7 +1031,7 @@ final class PortfolioStore {
         guard let database else { return [] }
         let sql = """
         SELECT captured_at, market, currency, invested, proceeds, market_value, cash_balance,
-               net_worth, realized_pnl, unrealized_pnl, total_pnl
+               net_worth, realized_pnl, unrealized_pnl, total_pnl, net_deposited
         FROM portfolio_snapshots
         WHERE currency = ?
         ORDER BY captured_at DESC
@@ -1047,7 +1055,8 @@ final class PortfolioStore {
                 netWorth: number(statement, 7),
                 realizedPnl: sqlite3_column_double(statement, 8),
                 unrealizedPnl: sqlite3_column_double(statement, 9),
-                totalPnl: sqlite3_column_double(statement, 10)
+                totalPnl: sqlite3_column_double(statement, 10),
+                netDeposited: number(statement, 11)
             ))
         }
         return snapshots.reversed()
@@ -1057,7 +1066,7 @@ final class PortfolioStore {
         guard let database else { return [] }
         let sql = """
         SELECT captured_at, market, currency, invested, proceeds, market_value, cash_balance,
-               net_worth, realized_pnl, unrealized_pnl, total_pnl
+               net_worth, realized_pnl, unrealized_pnl, total_pnl, net_deposited
         FROM portfolio_snapshots
         ORDER BY captured_at ASC
         LIMIT ?
@@ -1079,7 +1088,8 @@ final class PortfolioStore {
                 netWorth: number(statement, 7),
                 realizedPnl: sqlite3_column_double(statement, 8),
                 unrealizedPnl: sqlite3_column_double(statement, 9),
-                totalPnl: sqlite3_column_double(statement, 10)
+                totalPnl: sqlite3_column_double(statement, 10),
+                netDeposited: number(statement, 11)
             ))
         }
         return snapshots
@@ -1208,6 +1218,7 @@ final class PortfolioStore {
         )
         """)
         try? execute("ALTER TABLE portfolio_snapshots ADD COLUMN market TEXT NOT NULL DEFAULT 'all'")
+        try? execute("ALTER TABLE portfolio_snapshots ADD COLUMN net_deposited REAL")
         try execute("CREATE INDEX IF NOT EXISTS snapshots_market_currency_date ON portfolio_snapshots(market, currency, captured_at)")
     }
 
@@ -1290,8 +1301,8 @@ final class PortfolioStore {
         try perform("""
         INSERT INTO portfolio_snapshots
         (captured_at, market, currency, invested, proceeds, market_value, cash_balance,
-         net_worth, realized_pnl, unrealized_pnl, total_pnl)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         net_worth, realized_pnl, unrealized_pnl, total_pnl, net_deposited)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """) { statement in
             bind(statement, index: 1, value: snapshot.capturedAt.timeIntervalSince1970)
             bind(statement, index: 2, value: snapshot.market.rawValue)
@@ -1304,6 +1315,7 @@ final class PortfolioStore {
             bind(statement, index: 9, value: snapshot.realizedPnl)
             bind(statement, index: 10, value: snapshot.unrealizedPnl)
             bind(statement, index: 11, value: snapshot.totalPnl)
+            bind(statement, index: 12, value: snapshot.netDeposited)
         }
     }
 
@@ -1446,10 +1458,12 @@ enum PortfolioCalculator {
 
             case .deposit:
                 summary.cashBalance += transaction.amount
+                summary.netDeposited += transaction.amount
                 summary.hasFundingRecords = true
 
             case .withdrawal:
                 summary.cashBalance -= transaction.amount
+                summary.netDeposited -= transaction.amount
                 summary.hasFundingRecords = true
 
             case .dividend:

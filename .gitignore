@@ -9,3 +9,5 @@ CareAssets/build/
 .build/
 .swiftpm/
 DerivedData/
+
+refs/
