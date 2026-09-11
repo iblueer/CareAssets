@@ -29,6 +29,40 @@ private enum PortfolioTheme {
     }
 }
 
+extension PortfolioChartMetric {
+    static let netWorthColor = NSColor(calibratedRed: 0.65, green: 0.45, blue: 1.0, alpha: 1.0)
+    static let netDepositedColor = NSColor(calibratedRed: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
+    static let marketValueColor = NSColor(calibratedRed: 0.30, green: 0.72, blue: 1.0, alpha: 1.0)
+    static let investedColor = NSColor(calibratedRed: 1.0, green: 0.48, blue: 0.20, alpha: 1.0)
+    static let profitGreen = NSColor(calibratedRed: 0.28, green: 0.82, blue: 0.45, alpha: 1.0)
+    static let lossRed = NSColor(calibratedRed: 1.0, green: 0.35, blue: 0.38, alpha: 1.0)
+
+    var themeColor: NSColor {
+        switch self {
+        case .netWorth:
+            return Self.netWorthColor
+        case .netDeposited:
+            return Self.netDepositedColor
+        case .marketValue:
+            return Self.marketValueColor
+        case .invested:
+            return Self.investedColor
+        case .totalPnl:
+            return Self.profitGreen
+        }
+    }
+
+    func chartColor(totalPnl: Double?) -> NSColor {
+        if self == .totalPnl {
+            if let totalPnl {
+                return totalPnl >= 0 ? Self.profitGreen : Self.lossRed
+            }
+            return NSColor.systemGray
+        }
+        return themeColor
+    }
+}
+
 struct PortfolioChartPoint {
     var date: Date
     var value: Double
@@ -44,14 +78,14 @@ final class PortfolioChartView: NSView {
     var metric: PortfolioChartMetric = .netWorth {
         didSet { refreshChart() }
     }
-    var lineColor = NSColor(calibratedRed: 0.30, green: 0.72, blue: 1.0, alpha: 1) {
+    var lineColor = PortfolioChartMetric.netWorthColor {
         didSet { needsDisplay = true }
     }
     var secondaryPoints: [PortfolioChartPoint] = [] {
         didSet { refreshChart() }
     }
     var secondaryTitle: String = "净投入本金"
-    var secondaryLineColor = NSColor(calibratedRed: 0.96, green: 0.65, blue: 0.14, alpha: 0.90) {
+    var secondaryLineColor = PortfolioChartMetric.netDepositedColor {
         didSet { needsDisplay = true }
     }
 
@@ -125,6 +159,18 @@ final class PortfolioChartView: NSView {
         let progress = min(1, max(0, (event.locationInWindow.x - convert(plot.origin, to: nil).x) / plot.width))
         let index = Int((progress * CGFloat(points.count - 1)).rounded())
         hoverIndex = min(points.count - 1, max(0, index))
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        mouseMoved(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        mouseMoved(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -265,22 +311,53 @@ final class PortfolioChartView: NSView {
             ? formatSignedCurrencyWithCode(point.value, currencyCode: currency, compact: false)
             : formatCurrencyWithCode(point.value, currencyCode: currency, compact: false)
 
+        let bodyFont = appFont(ofSize: 11, weight: .regular)
+        let boldFont = appFont(ofSize: 11, weight: .semibold)
+
         if !secondaryPoints.isEmpty, hoverIndex < secondaryPoints.count {
             let secPoint = secondaryPoints[hoverIndex]
             let secValue = formatCurrencyWithCode(secPoint.value, currencyCode: currency, compact: false)
             let diff = point.value - secPoint.value
             let diffText = formatSignedCurrencyWithCode(diff, currencyCode: currency, compact: false)
             tooltip.maximumNumberOfLines = 4
-            tooltip.stringValue = "\(date)\n\(metric.title)：\(value)\n\(secondaryTitle)：\(secValue)\n盈亏差额：\(diffText)"
+
+            let attr = NSMutableAttributedString()
+            attr.append(NSAttributedString(string: "\(date)\n", attributes: [
+                .font: bodyFont,
+                .foregroundColor: NSColor.white.withAlphaComponent(0.65)
+            ]))
+            attr.append(NSAttributedString(string: "\(metric.title)：\(value)\n", attributes: [
+                .font: boldFont,
+                .foregroundColor: lineColor
+            ]))
+            attr.append(NSAttributedString(string: "\(secondaryTitle)：\(secValue)\n", attributes: [
+                .font: boldFont,
+                .foregroundColor: secondaryLineColor
+            ]))
+            let diffColor = diff >= 0 ? PortfolioChartMetric.profitGreen : PortfolioChartMetric.lossRed
+            attr.append(NSAttributedString(string: "盈亏差额：\(diffText)", attributes: [
+                .font: boldFont,
+                .foregroundColor: diffColor
+            ]))
+            tooltip.attributedStringValue = attr
             tooltip.sizeToFit()
-            tooltip.frame.size.width = min(220, max(150, tooltip.frame.width + 18))
-            tooltip.frame.size.height = 68
+            tooltip.frame.size.width = min(230, max(160, tooltip.frame.width + 18))
+            tooltip.frame.size.height = 74
         } else {
             tooltip.maximumNumberOfLines = 2
-            tooltip.stringValue = "\(date)\n\(metric.title)：\(value)"
+            let attr = NSMutableAttributedString()
+            attr.append(NSAttributedString(string: "\(date)\n", attributes: [
+                .font: bodyFont,
+                .foregroundColor: NSColor.white.withAlphaComponent(0.65)
+            ]))
+            attr.append(NSAttributedString(string: "\(metric.title)：\(value)", attributes: [
+                .font: boldFont,
+                .foregroundColor: lineColor
+            ]))
+            tooltip.attributedStringValue = attr
             tooltip.sizeToFit()
-            tooltip.frame.size.width = min(188, max(130, tooltip.frame.width + 18))
-            tooltip.frame.size.height = 38
+            tooltip.frame.size.width = min(190, max(130, tooltip.frame.width + 18))
+            tooltip.frame.size.height = 42
         }
         let plot = plotRect
         let cursorX = plot.minX + CGFloat(hoverIndex) / CGFloat(max(1, points.count - 1)) * plot.width
@@ -379,6 +456,7 @@ final class PortfolioMainWindowController: NSWindowController, NSWindowDelegate 
         window.minSize = NSSize(width: 860, height: 580)
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .darkAqua)
+        window.acceptsMouseMovedEvents = true
         window.contentViewController = portfolioViewController
         super.init(window: window)
         window.delegate = self
@@ -505,6 +583,16 @@ final class PortfolioMainViewController: NSViewController {
     private var sectionButtons: [Section: NSButton] = [:]
     private weak var contentView: NSView?
     private weak var titleLabel: NSTextField?
+    private weak var watchlistScrollView: NSScrollView?
+    private weak var watchlistSplitView: NSSplitView?
+    private weak var watchlistListStackView: NSStackView?
+    private var watchlistListScrollPosition = ScrollPosition()
+    private weak var overviewScrollView: NSScrollView?
+    private var overviewScrollPosition = ScrollPosition()
+    private weak var transactionsScrollView: NSScrollView?
+    private var transactionsScrollPosition = ScrollPosition()
+    private weak var settingsScrollView: NSScrollView?
+    private var settingsScrollPosition = ScrollPosition()
 
     override func loadView() {
         let root = NSView()
@@ -518,6 +606,7 @@ final class PortfolioMainViewController: NSViewController {
         if let watchlistSplitObserver {
             NotificationCenter.default.removeObserver(watchlistSplitObserver)
         }
+        NotificationCenter.default.removeObserver(self)
     }
 
     func update(
@@ -697,8 +786,70 @@ final class PortfolioMainViewController: NSViewController {
         renderContent()
     }
 
+    private func captureScrollPositions() {
+        if let watchlistScrollView {
+            watchlistListScrollPosition = captureScrollPosition(from: watchlistScrollView)
+        }
+        if let overviewScrollView {
+            overviewScrollPosition = captureScrollPosition(from: overviewScrollView)
+        }
+        if let transactionsScrollView {
+            transactionsScrollPosition = captureScrollPosition(from: transactionsScrollView)
+        }
+        if let settingsScrollView {
+            settingsScrollPosition = captureScrollPosition(from: settingsScrollView)
+        }
+    }
+
+    private func captureScrollPosition(from scrollView: NSScrollView) -> ScrollPosition {
+        guard let documentView = scrollView.documentView else {
+            return ScrollPosition()
+        }
+        let viewportHeight = scrollView.contentView.bounds.height
+        let maxY = max(0, documentView.bounds.height - viewportHeight)
+        let currentY = scrollView.contentView.bounds.origin.y
+        return ScrollPosition(y: currentY, pinnedToBottom: maxY - currentY <= 2)
+    }
+
+    private func applyScrollPosition(_ position: ScrollPosition, in scrollView: NSScrollView) {
+        guard let documentView = scrollView.documentView else { return }
+        scrollView.layoutSubtreeIfNeeded()
+        let viewportHeight = scrollView.contentView.bounds.height
+        let maxY = max(0, documentView.bounds.height - viewportHeight)
+        let restoredY = position.pinnedToBottom ? maxY : min(max(position.y, 0), maxY)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: restoredY))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func restoreWatchlistScrollPosition() {
+        guard let scroll = watchlistScrollView else { return }
+        applyScrollPosition(watchlistListScrollPosition, in: scroll)
+    }
+
+    @objc private func watchlistClipViewBoundsDidChange(_ notification: Notification) {
+        guard let clipView = notification.object as? NSClipView,
+              clipView == watchlistScrollView?.contentView,
+              let scroll = watchlistScrollView else { return }
+        watchlistListScrollPosition = captureScrollPosition(from: scroll)
+    }
+
+    private func updateWatchlistRowSelection() {
+        guard let listStack = watchlistListStackView else { return }
+        for subview in listStack.arrangedSubviews {
+            guard let button = subview as? NSButton, let id = button.identifier?.rawValue else { continue }
+            let isSelected = (id == selectedWatchlistAssetID)
+            button.layer?.backgroundColor = (isSelected
+                ? PortfolioTheme.selectedFill
+                : PortfolioTheme.raisedSurface).cgColor
+            button.layer?.borderColor = (isSelected
+                ? PortfolioTheme.selectedBorder
+                : PortfolioTheme.surfaceBorder).cgColor
+        }
+    }
+
     private func renderContent() {
         guard let contentView else { return }
+        captureScrollPositions()
         contentView.subviews.forEach { $0.removeFromSuperview() }
 
         let header = NSView()
@@ -824,6 +975,7 @@ final class PortfolioMainViewController: NSViewController {
 
     private func buildOverview(in body: NSView) {
         let scroll = makeScrollView()
+        overviewScrollView = scroll
         body.addSubview(scroll)
         let stack = verticalStack()
         let document = FlippedDocumentView()
@@ -841,6 +993,7 @@ final class PortfolioMainViewController: NSViewController {
             stack.topAnchor.constraint(equalTo: document.topAnchor),
             stack.bottomAnchor.constraint(equalTo: document.bottomAnchor)
         ])
+        applyScrollPosition(overviewScrollPosition, in: scroll)
 
         let currency = selectedCurrency
         let selectedSummary = overviewSummaries[selectedMarket]?[currency]
@@ -848,11 +1001,57 @@ final class PortfolioMainViewController: NSViewController {
         cards.orientation = .horizontal
         cards.spacing = 12
         cards.distribution = .fillEqually
-        cards.addArrangedSubview(metricCard("持仓市值", selectedSummary.map { formatCurrencyWithCode($0.marketValue, currencyCode: currency, compact: true) } ?? "--", "当前行情估值", .systemBlue))
-        cards.addArrangedSubview(metricCard("净投入本金", selectedSummary?.hasFundingRecords == true ? formatCurrencyWithCode(selectedSummary?.netDeposited ?? 0, currencyCode: currency, compact: true) : "--", "累计入金 - 累计出金", .systemIndigo))
-        cards.addArrangedSubview(metricCard("累计买入", selectedSummary.map { formatCurrencyWithCode($0.grossInvested, currencyCode: currency, compact: true) } ?? "--", "买入金额与费用", .systemOrange))
-        cards.addArrangedSubview(metricCard("累计盈亏", selectedSummary.map { formatSignedCurrencyWithCode($0.totalPnl, currencyCode: currency, compact: true) } ?? "--", "已实现 + 未实现", selectedSummary.map { $0.totalPnl >= 0 ? .systemGreen : .systemRed } ?? .systemGray))
-        cards.addArrangedSubview(metricCard("总资产", selectedSummary?.hasFundingRecords == true ? formatCurrencyWithCode(selectedSummary?.netWorth ?? 0, currencyCode: currency, compact: true) : "需记录入金", selectedSummary?.hasFundingRecords == true ? "现金 + 持仓市值" : "仅买卖记录无法还原", .systemPurple))
+        cards.addArrangedSubview(metricCard(
+            "持仓市值",
+            selectedSummary.map { formatCurrencyWithCode($0.marketValue, currencyCode: currency, compact: true) } ?? "--",
+            "当前行情估值",
+            PortfolioChartMetric.marketValueColor,
+            isSelected: selectedMetric == .marketValue
+        ) { [weak self] in
+            self?.selectedMetric = .marketValue
+            self?.renderContent()
+        })
+        cards.addArrangedSubview(metricCard(
+            "净投入本金",
+            selectedSummary?.hasFundingRecords == true ? formatCurrencyWithCode(selectedSummary?.netDeposited ?? 0, currencyCode: currency, compact: true) : "--",
+            "累计入金 - 累计出金",
+            PortfolioChartMetric.netDepositedColor,
+            isSelected: selectedMetric == .netDeposited
+        ) { [weak self] in
+            self?.selectedMetric = .netDeposited
+            self?.renderContent()
+        })
+        cards.addArrangedSubview(metricCard(
+            "累计买入",
+            selectedSummary.map { formatCurrencyWithCode($0.grossInvested, currencyCode: currency, compact: true) } ?? "--",
+            "买入金额与费用",
+            PortfolioChartMetric.investedColor,
+            isSelected: selectedMetric == .invested
+        ) { [weak self] in
+            self?.selectedMetric = .invested
+            self?.renderContent()
+        })
+        let pnlColor = PortfolioChartMetric.totalPnl.chartColor(totalPnl: selectedSummary?.totalPnl)
+        cards.addArrangedSubview(metricCard(
+            "累计盈亏",
+            selectedSummary.map { formatSignedCurrencyWithCode($0.totalPnl, currencyCode: currency, compact: true) } ?? "--",
+            "已实现 + 未实现",
+            pnlColor,
+            isSelected: selectedMetric == .totalPnl
+        ) { [weak self] in
+            self?.selectedMetric = .totalPnl
+            self?.renderContent()
+        })
+        cards.addArrangedSubview(metricCard(
+            "总资产",
+            selectedSummary?.hasFundingRecords == true ? formatCurrencyWithCode(selectedSummary?.netWorth ?? 0, currencyCode: currency, compact: true) : "需记录入金",
+            selectedSummary?.hasFundingRecords == true ? "现金 + 持仓市值" : "仅买卖记录无法还原",
+            PortfolioChartMetric.netWorthColor,
+            isSelected: selectedMetric == .netWorth
+        ) { [weak self] in
+            self?.selectedMetric = .netWorth
+            self?.renderContent()
+        })
         cards.heightAnchor.constraint(equalToConstant: 94).isActive = true
         stack.addArrangedSubview(cards)
         cards.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -866,9 +1065,24 @@ final class PortfolioMainViewController: NSViewController {
         chartTitle.textColor = .white
         chartHeader.addArrangedSubview(chartTitle)
         if selectedMetric == .netWorth {
-            let legend = NSTextField(labelWithString: "（实线：总资产 / 虚线：净本金）")
-            legend.font = appFont(ofSize: 11, weight: .medium)
-            legend.textColor = NSColor.white.withAlphaComponent(0.50)
+            let legend = NSTextField(labelWithString: "")
+            let attr = NSMutableAttributedString()
+            let dimAttrs: [NSAttributedString.Key: Any] = [
+                .font: appFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.50)
+            ]
+            attr.append(NSAttributedString(string: "（实线：", attributes: dimAttrs))
+            attr.append(NSAttributedString(string: "总资产", attributes: [
+                .font: appFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: PortfolioChartMetric.netWorthColor
+            ]))
+            attr.append(NSAttributedString(string: " / 虚线：", attributes: dimAttrs))
+            attr.append(NSAttributedString(string: "净投入本金", attributes: [
+                .font: appFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: PortfolioChartMetric.netDepositedColor
+            ]))
+            attr.append(NSAttributedString(string: "）", attributes: dimAttrs))
+            legend.attributedStringValue = attr
             chartHeader.addArrangedSubview(legend)
         }
         let spacer = NSView()
@@ -911,22 +1125,11 @@ final class PortfolioMainViewController: NSViewController {
                 return PortfolioChartPoint(date: snapshot.capturedAt, value: value)
             }
             chart.secondaryTitle = "净投入本金"
-            chart.lineColor = NSColor(calibratedRed: 0.65, green: 0.45, blue: 1.0, alpha: 1.0)
-            chart.secondaryLineColor = NSColor(calibratedRed: 0.96, green: 0.65, blue: 0.14, alpha: 0.90)
+            chart.lineColor = PortfolioChartMetric.netWorthColor
+            chart.secondaryLineColor = PortfolioChartMetric.netDepositedColor
         } else {
             chart.secondaryPoints = []
-            switch selectedMetric {
-            case .netDeposited:
-                chart.lineColor = NSColor(calibratedRed: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
-            case .marketValue:
-                chart.lineColor = NSColor(calibratedRed: 0.30, green: 0.72, blue: 1.0, alpha: 1.0)
-            case .invested:
-                chart.lineColor = .systemOrange
-            case .totalPnl:
-                chart.lineColor = (selectedSummary?.totalPnl ?? 0) >= 0 ? .systemGreen : .systemRed
-            case .netWorth:
-                break
-            }
+            chart.lineColor = selectedMetric.chartColor(totalPnl: selectedSummary?.totalPnl)
         }
         chart.heightAnchor.constraint(equalToConstant: 255).isActive = true
         stack.addArrangedSubview(chart)
@@ -939,6 +1142,7 @@ final class PortfolioMainViewController: NSViewController {
         split.dividerStyle = .thin
         split.translatesAutoresizingMaskIntoConstraints = false
         body.addSubview(split)
+        watchlistSplitView = split
 
         let listPane = makeWatchlistListPane(items)
         split.addArrangedSubview(listPane)
@@ -973,6 +1177,7 @@ final class PortfolioMainViewController: NSViewController {
             let maximumWidth = max(260, split.bounds.width - 360)
             split.setPosition(min(max(self.watchlistPaneWidth, 260), maximumWidth), ofDividerAt: 0)
             split.adjustSubviews()
+            self.restoreWatchlistScrollPosition()
             self.watchlistSplitObserver = NotificationCenter.default.addObserver(
                 forName: NSSplitView.didResizeSubviewsNotification,
                 object: split,
@@ -1214,8 +1419,17 @@ final class PortfolioMainViewController: NSViewController {
 
         let scroll = makeScrollView()
         pane.addSubview(scroll)
+        watchlistScrollView = scroll
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(watchlistClipViewBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: scroll.contentView
+        )
         let list = verticalStack()
         list.spacing = 7
+        watchlistListStackView = list
         let document = FlippedDocumentView()
         document.addSubview(list)
         scroll.documentView = document
@@ -1258,6 +1472,7 @@ final class PortfolioMainViewController: NSViewController {
             list.topAnchor.constraint(equalTo: document.topAnchor),
             list.bottomAnchor.constraint(equalTo: document.bottomAnchor)
         ])
+        applyScrollPosition(watchlistListScrollPosition, in: scroll)
         return pane
     }
 
@@ -1678,6 +1893,7 @@ final class PortfolioMainViewController: NSViewController {
 
     private func buildSettings(in body: NSView) {
         let scroll = makeScrollView()
+        settingsScrollView = scroll
         body.addSubview(scroll)
         let stack = verticalStack()
         stack.spacing = 14
@@ -1718,6 +1934,7 @@ final class PortfolioMainViewController: NSViewController {
             stack.topAnchor.constraint(equalTo: document.topAnchor),
             stack.bottomAnchor.constraint(equalTo: document.bottomAnchor)
         ])
+        applyScrollPosition(settingsScrollPosition, in: scroll)
     }
 
     private func settingsSection(_ title: String, rows: [NSView]) -> NSView {
@@ -1808,6 +2025,7 @@ final class PortfolioMainViewController: NSViewController {
 
     private func buildTransactions(in body: NSView) {
         let scroll = makeScrollView()
+        transactionsScrollView = scroll
         body.addSubview(scroll)
         let stack = verticalStack()
         stack.spacing = 8
@@ -1826,6 +2044,7 @@ final class PortfolioMainViewController: NSViewController {
             stack.topAnchor.constraint(equalTo: document.topAnchor),
             stack.bottomAnchor.constraint(equalTo: document.bottomAnchor)
         ])
+        applyScrollPosition(transactionsScrollPosition, in: scroll)
         if transactions.isEmpty {
             let empty = NSTextField(wrappingLabelWithString: "还没有交易记录。点击右上角“记录交易”开始。")
             empty.font = appFont(ofSize: 14, weight: .medium)
@@ -2091,40 +2310,109 @@ final class PortfolioMainViewController: NSViewController {
         return accounts.first(where: { $0.id == id })?.name ?? "已删除账户"
     }
 
-    private func metricCard(_ title: String, _ value: String, _ subtitle: String, _ color: NSColor) -> NSView {
-        let card = NSView()
+private final class MetricCardView: NSView {
+    var onClick: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect, .cursorUpdate],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if onClick != nil {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if onClick != nil {
+            NSCursor.pointingHand.set()
+        } else {
+            super.cursorUpdate(with: event)
+        }
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Accept mouse down to receive mouseUp
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if bounds.contains(point) {
+            onClick?()
+        }
+    }
+}
+
+    private func metricCard(
+        _ title: String,
+        _ value: String,
+        _ subtitle: String,
+        _ color: NSColor,
+        isSelected: Bool = false,
+        onClick: (() -> Void)? = nil
+    ) -> NSView {
+        let card = MetricCardView()
         card.wantsLayer = true
         card.layer?.cornerRadius = 10
         card.layer?.masksToBounds = true
-        card.layer?.backgroundColor = PortfolioTheme.raisedSurface.cgColor
-        card.layer?.borderColor = PortfolioTheme.surfaceBorder.cgColor
-        card.layer?.borderWidth = 1
+        if isSelected {
+            card.layer?.backgroundColor = color.withAlphaComponent(0.09).cgColor
+            card.layer?.borderColor = color.withAlphaComponent(0.48).cgColor
+            card.layer?.borderWidth = 1.5
+        } else {
+            card.layer?.backgroundColor = PortfolioTheme.raisedSurface.cgColor
+            card.layer?.borderColor = PortfolioTheme.surfaceBorder.cgColor
+            card.layer?.borderWidth = 1.0
+        }
+        card.onClick = onClick
+
         let accent = NSView()
         accent.wantsLayer = true
-        accent.layer?.backgroundColor = color.withAlphaComponent(0.9).cgColor
+        accent.layer?.backgroundColor = isSelected ? color.cgColor : color.withAlphaComponent(0.85).cgColor
         accent.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(accent)
+
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = appFont(ofSize: 11, weight: .semibold)
-        titleLabel.textColor = color.withAlphaComponent(0.92)
+        titleLabel.font = appFont(ofSize: 11, weight: isSelected ? .bold : .semibold)
+        titleLabel.textColor = color.withAlphaComponent(isSelected ? 1.0 : 0.92)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(titleLabel)
+
         let valueLabel = NSTextField(labelWithString: value)
         valueLabel.font = senFont(ofSize: 18)
         valueLabel.textColor = .white
         valueLabel.lineBreakMode = .byTruncatingTail
         valueLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(valueLabel)
+
         let subtitleLabel = NSTextField(labelWithString: subtitle)
         subtitleLabel.font = appFont(ofSize: 10, weight: .regular)
-        subtitleLabel.textColor = PortfolioTheme.mutedText
+        subtitleLabel.textColor = isSelected ? NSColor.white.withAlphaComponent(0.48) : PortfolioTheme.mutedText
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(subtitleLabel)
+
         NSLayoutConstraint.activate([
             accent.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             accent.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             accent.topAnchor.constraint(equalTo: card.topAnchor),
-            accent.heightAnchor.constraint(equalToConstant: 3),
+            accent.heightAnchor.constraint(equalToConstant: isSelected ? 3.5 : 3.0),
             titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
             titleLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
             titleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 13),
@@ -2509,14 +2797,33 @@ final class PortfolioMainViewController: NSViewController {
 
     @objc private func watchlistRowClicked(_ sender: NSButton) {
         guard let assetID = sender.identifier?.rawValue else { return }
+        if assetID == selectedWatchlistAssetID { return }
         selectedWatchlistAssetID = assetID
         requestedWatchlistChartKey = nil
-        renderContent()
+
+        let items = isEditingWatchlist ? watchlistItems() : filteredWatchlistItems()
+        guard let selectedItem = items.first(where: { $0.assetID == assetID }),
+              let split = watchlistSplitView,
+              split.subviews.count >= 2 else {
+            renderContent()
+            return
+        }
+
+        updateWatchlistRowSelection()
+        let newDetailPane = makeWatchlistDetailPane(for: selectedItem)
+        newDetailPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
+        let oldDetailPane = split.subviews[1]
+        split.replaceSubview(oldDetailPane, with: newDetailPane)
+        let dividerPos = min(max(watchlistPaneWidth, 260), max(260, split.bounds.width - 360))
+        split.setPosition(dividerPos, ofDividerAt: 0)
+        split.adjustSubviews()
+        requestSelectedWatchlistChartIfNeeded()
     }
 
     @objc private func watchlistFilterChanged(_ sender: NSSegmentedControl) {
         guard let filter = WatchlistFilter(rawValue: sender.selectedSegment) else { return }
         watchlistFilter = filter
+        watchlistListScrollPosition = ScrollPosition()
         normalizeWatchlistSelection()
         renderContent()
     }
@@ -2540,7 +2847,22 @@ final class PortfolioMainViewController: NSViewController {
         guard periods.indices.contains(sender.indexOfSelectedItem) else { return }
         watchlistChartPeriod = periods[sender.indexOfSelectedItem]
         requestedWatchlistChartKey = nil
-        renderContent()
+
+        let items = isEditingWatchlist ? watchlistItems() : filteredWatchlistItems()
+        if let selectedItem = items.first(where: { $0.assetID == selectedWatchlistAssetID }),
+           let split = watchlistSplitView,
+           split.subviews.count >= 2 {
+            let newDetailPane = makeWatchlistDetailPane(for: selectedItem)
+            newDetailPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
+            let oldDetailPane = split.subviews[1]
+            split.replaceSubview(oldDetailPane, with: newDetailPane)
+            let dividerPos = min(max(watchlistPaneWidth, 260), max(260, split.bounds.width - 360))
+            split.setPosition(dividerPos, ofDividerAt: 0)
+            split.adjustSubviews()
+            requestSelectedWatchlistChartIfNeeded()
+        } else {
+            renderContent()
+        }
     }
 
     @objc private func removeWatchlistAssetClicked(_ sender: NSButton) {

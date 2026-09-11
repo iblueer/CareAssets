@@ -2320,6 +2320,7 @@ final class StatusTickerView: NSView {
     }
 
     var onClick: (() -> Void)?
+    var onRightClick: ((NSEvent) -> Void)?
     var loadingFrame = 0 {
         didSet {
             needsDisplay = true
@@ -2408,7 +2409,21 @@ final class StatusTickerView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {
+            if let onRightClick {
+                onRightClick(event)
+                return
+            }
+        }
         onClick?()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if let onRightClick {
+            onRightClick(event)
+        } else {
+            super.rightMouseDown(with: event)
+        }
     }
 
     private func valueText(for item: DisplayAsset) -> String {
@@ -3006,12 +3021,12 @@ final class SearchResultActionButton: NSButton {
     }
 }
 
-final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
-    private struct ScrollPosition {
-        var y: CGFloat = 0
-        var pinnedToBottom = false
-    }
+struct ScrollPosition {
+    var y: CGFloat = 0
+    var pinnedToBottom = false
+}
 
+final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
     private enum SearchListItem {
         case group(title: String, count: Int, accentColor: NSColor)
         case result(AssetSearchResult)
@@ -3099,6 +3114,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         view.userInterfaceLayoutDirection = L10n.isRightToLeft ? .rightToLeft : .leftToRight
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.11, blue: 0.13, alpha: 0.98).cgColor
+        view.menu = makeContextMenu()
         render()
     }
 
@@ -3165,6 +3181,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         captureScrollPositions()
         view.subviews.forEach { $0.removeFromSuperview() }
         view.userInterfaceLayoutDirection = isRTL ? .rightToLeft : .leftToRight
+        view.menu = makeContextMenu()
 
         let preferredSize = NSSize(width: panelWidth, height: preferredPanelHeight)
         preferredContentSize = preferredSize
@@ -3404,13 +3421,7 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         refresh.widthAnchor.constraint(equalToConstant: 62).isActive = true
         refreshStateLabel = refresh
 
-        let openMainWindow = NSButton(title: "主窗口", target: self, action: #selector(openMainWindowButtonClicked(_:)))
-        openMainWindow.bezelStyle = .rounded
-        openMainWindow.controlSize = .small
-        openMainWindow.font = appFont(ofSize: 12, weight: .semibold)
-        openMainWindow.widthAnchor.constraint(equalToConstant: 64).isActive = true
-
-        addArrangedSubviews([brand, spacer, refresh, openMainWindow], to: row)
+        addArrangedSubviews([brand, spacer, refresh], to: row)
         return row
     }
 
@@ -3457,6 +3468,8 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         }
 
         scroll.documentView = document
+        scroll.menu = makeContextMenu()
+        document.menu = makeContextMenu()
         assetScrollView = scroll
         restoreScrollPosition(assetScrollPosition, in: scroll, viewportHeight: listHeight)
         return scroll
@@ -4034,6 +4047,19 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         }
     }
 
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.appearance = NSAppearance(named: .darkAqua)
+        let mainWindow = NSMenuItem(title: "打开主窗口", action: #selector(contextOpenMainWindowClicked(_:)), keyEquivalent: "")
+        mainWindow.target = self
+        menu.addItem(mainWindow)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "退出", action: #selector(contextQuitClicked(_:)), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        return menu
+    }
+
     private func makeSettingsMenu() -> NSMenu {
         let menu = NSMenu()
         menu.appearance = NSAppearance(named: .darkAqua)
@@ -4255,6 +4281,14 @@ final class AssetPanelViewController: NSViewController, NSTextFieldDelegate {
         } else {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
         }
+    }
+
+    @objc private func contextOpenMainWindowClicked(_ sender: NSMenuItem) {
+        onOpenMainWindow?()
+    }
+
+    @objc private func contextQuitClicked(_ sender: NSMenuItem) {
+        onQuit?()
     }
 
     @objc private func openMainWindowButtonClicked(_ sender: NSButton) {
@@ -4963,6 +4997,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         tickerView.onClick = { [weak self] in
             self?.togglePopover()
         }
+        tickerView.onRightClick = { [weak self] event in
+            self?.showStatusContextMenu(with: event)
+        }
 
         if let button = statusItem?.button {
             button.title = ""
@@ -4982,6 +5019,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 ])
             }
         }
+    }
+
+    private func showStatusContextMenu(with event: NSEvent) {
+        if popover.isShown {
+            closePopover()
+        }
+        let menu = makeStatusContextMenu()
+        NSMenu.popUpContextMenu(menu, with: event, for: tickerView)
+    }
+
+    private func makeStatusContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.appearance = NSAppearance(named: .darkAqua)
+        let openMain = NSMenuItem(title: "打开主窗口", action: #selector(openMainWindowFromStatusMenu(_:)), keyEquivalent: "")
+        openMain.target = self
+        menu.addItem(openMain)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "退出", action: #selector(quitFromStatusMenu(_:)), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        return menu
+    }
+
+    @objc private func openMainWindowFromStatusMenu(_ sender: Any?) {
+        closePopover()
+        showMainWindow()
+    }
+
+    @objc private func quitFromStatusMenu(_ sender: Any?) {
+        NSApp.terminate(nil)
     }
 
     private func setupPopover() {
@@ -5031,6 +5098,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self?.setLanguage(language)
         }
         panelViewController.onOpenMainWindow = { [weak self] in
+            self?.closePopover()
             self?.showMainWindow()
         }
         panelViewController.onPreferredContentSizeChange = { [weak self] size in
